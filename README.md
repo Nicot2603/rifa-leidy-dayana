@@ -12,7 +12,10 @@ Tablero compartido para la rifa solidaria.
 
 Toca un número libre, escribe tu nombre y el número queda tapado con tu nombre.
 El tablero es compartido: todos ven el mismo estado y se actualiza cada pocos segundos.
+Al apartar se abre WhatsApp con el mensaje para Leidy (311 275 6483) indicando el número
+elegido, listo para enviar.
 
+- **Contacto (WhatsApp):** +57 311 275 6483 (se cambia en `whatsapp` del bloque `CFG`).
 - `index.html` — la app (una sola página, sin frameworks).
 - `api/board.js` — función de Vercel que lee y guarda el tablero en Vercel Blob.
 - `package.json` — dependencia `@vercel/blob`.
