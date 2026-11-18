@@ -1,13 +1,17 @@
 'use strict';
 
-const { put, head } = require('@vercel/blob');
+const { put, list } = require('@vercel/blob');
 
-const PATHNAME = 'board.json';
+// El tablero se guarda como "snapshots" inmutables: cada cambio escribe un
+// archivo nuevo con nombre único. Así nunca se lee una versión vieja desde el
+// CDN (Vercel Blob cachea las URLs públicas durante 60 s y al sobrescribir un
+// archivo se seguía viendo el contenido anterior).
+const PREFIX = 'snap/';
+const LEGACY = 'board.json';
+const MAX_SNAPSHOTS = 1000;
 const TOTAL = 100;
 const NAME_MAX = 40;
 const PHONE_MAX = 20;
-const WRITE_ATTEMPTS = 3;
-const RETRY_MS = 250;
 
 function send(res, code, data) {
   res.statusCode = code;
@@ -23,81 +27,68 @@ function clean(value, max) {
     .slice(0, max);
 }
 
-async function readBoard() {
-  const url = await blobUrl();
-  if (!url) return { sold: {}, updatedAt: 0 };
-
-  const bust = url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now();
-  const response = await fetch(bust, { cache: 'no-store' });
-
-  if (response.status === 404) {
-    cachedUrl = null;
-    return { sold: {}, updatedAt: 0 };
-  }
-  if (!response.ok) throw new Error('No se pudo leer el tablero');
-
-  const data = await response.json();
+function normalize(data) {
   return {
     sold: data && typeof data.sold === 'object' && data.sold ? data.sold : {},
     updatedAt: Number(data && data.updatedAt) || 0
   };
 }
 
-// URL estable del tablero (se recuerda para leer siempre la última versión)
-let cachedUrl = null;
+function snapshotTime(blob) {
+  const name = blob.pathname.slice(PREFIX.length);
+  return Number(name.split('-')[0]) || 0;
+}
 
-async function blobUrl() {
-  if (cachedUrl) return cachedUrl;
-  try {
-    const info = await head(PATHNAME);
-    cachedUrl = info.url;
-  } catch (err) {
-    if (err && err.name === 'BlobNotFoundError') cachedUrl = null;
-    else throw err;
+// Devuelve los snapshots del más nuevo al más viejo
+async function snapshots() {
+  const { blobs } = await list({ prefix: PREFIX, limit: MAX_SNAPSHOTS });
+  return blobs
+    .map(function (b) { return { url: b.url, at: snapshotTime(b) }; })
+    .sort(function (a, b) { return b.at - a.at; });
+}
+
+async function readUrl(url) {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) return null;
+  return normalize(await response.json());
+}
+
+async function readBoard() {
+  const found = await snapshots();
+
+  for (const snap of found.slice(0, 3)) {
+    const board = await readUrl(snap.url);
+    if (board) return board;
   }
-  return cachedUrl;
+
+  return readLegacy();
+}
+
+// Compatibilidad con el primer formato (un solo archivo sobrescrito)
+async function readLegacy() {
+  try {
+    const { blobs } = await list({ prefix: LEGACY, limit: 10 });
+    const found = blobs.find(function (b) { return b.pathname === LEGACY; });
+    if (!found) return { sold: {}, updatedAt: 0 };
+    const board = await readUrl(found.url);
+    return board || { sold: {}, updatedAt: 0 };
+  } catch (e) {
+    return { sold: {}, updatedAt: 0 };
+  }
 }
 
 async function writeBoard(sold) {
   const board = { sold, updatedAt: Date.now() };
-  const payload = JSON.stringify(board);
+  const name = PREFIX + board.updatedAt + '-' + Math.random().toString(36).slice(2, 8) + '.json';
 
-  for (let attempt = 1; attempt <= WRITE_ATTEMPTS; attempt++) {
-    const result = await put(PATHNAME, payload, {
-      access: 'public',
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType: 'application/json',
-      cacheControlMaxAge: 0
-    });
-    if (result && result.url) cachedUrl = result.url;
-
-    if (await isReadable(board.updatedAt)) break;
-    if (attempt < WRITE_ATTEMPTS) await sleep(RETRY_MS);
-  }
+  await put(name, JSON.stringify(board), {
+    access: 'public',
+    addRandomSuffix: false,
+    allowOverwrite: false,
+    contentType: 'application/json'
+  });
 
   return board;
-}
-
-// Confirma que la versión recién escrita ya se puede leer
-async function isReadable(stamp) {
-  try {
-    const url = await blobUrl();
-    if (!url) return false;
-
-    const bust = url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now();
-    const response = await fetch(bust, { cache: 'no-store' });
-    if (!response.ok) return false;
-
-    const data = await response.json();
-    return Number(data && data.updatedAt) >= stamp;
-  } catch (e) {
-    return false;
-  }
-}
-
-function sleep(ms) {
-  return new Promise(function (done) { setTimeout(done, ms); });
 }
 
 // Serializa las escrituras dentro de la misma instancia
@@ -132,12 +123,10 @@ module.exports = async (req, res) => {
     if (!/^\d{2}$/.test(num) || Number(num) >= TOTAL) {
       return send(res, 400, { ok: false, error: 'number' });
     }
-
     if (!['claim', 'edit', 'release'].includes(action)) {
       return send(res, 400, { ok: false, error: 'action' });
     }
 
-    // Un turno a la vez: leer, cambiar y guardar sin pisar cambios de otros
     return await lock(async () => {
       const sold = (await readBoard()).sold;
 
