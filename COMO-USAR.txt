@@ -1,0 +1,82 @@
+﻿# Gran Rifa Solidaria — Leidy Dayana
+
+**Premio $200.000 · Boleta $10.000 · 100 números (00 al 99) · Sábado 21 de noviembre de 2026**
+
+Archivo de la app: **index.html**
+Afiche para estados: **afiche-rifa.png** (1080×1920)
+
+---
+
+## Cómo se usa
+
+1. Abrir `index.html` (doble clic o el enlace ya publicado).
+2. Tocar un número libre del tablero.
+3. Escribir **nombre y apellido** (el celular es opcional).
+4. Al guardar, el número se **tapa con el nombre** y aparece un **comprobante** con el número, el valor de la boleta y la fecha.
+5. El comprobante muestra el número, el valor de la boleta y la fecha (se puede tomar captura).
+6. Tocar un número ya tapado muestra quién lo tiene, permite **editarlo** o **liberarlo**.
+
+Botones disponibles:
+
+| Botón | Qué hace |
+|---|---|
+| Elegir mi número | Baja al tablero |
+| Compartir | Comparte el enlace / resumen del tablero |
+| Buscar | Filtra por número o por nombre |
+| Participantes | Lista de números apartados con su nombre |
+| Imprimir | Imprime el tablero para llevarlo en papel |
+
+El tablero muestra **vendidos**, **disponibles** y **recaudado**, con barra de progreso.
+
+---
+
+## Cómo publicarlo en Vercel
+
+**Opción rápida (sin instalar nada):**
+1. Entra a https://vercel.com/new
+2. Arrastra esta carpeta completa (o súbela como .zip) en la zona de carga.
+3. Pulsa **Deploy**. Vercel detecta `index.html` y publica el sitio.
+4. Te da un enlace tipo `https://gran-rifa-leidy.vercel.app` — ese es el que compartes.
+
+**Opción con la terminal:**
+```
+npm i -g vercel
+cd C:\Users\ASUS\Downloads\leidy
+vercel
+vercel --prod
+```
+
+Para cambiar el premio, el precio o la fecha después de publicar, se edita el bloque
+`var CFG = { ... }` dentro de `index.html` y se vuelve a subir.
+
+---
+
+## Importante (leer antes de publicar)
+
+Los apartados se guardan en el **navegador de cada persona** (no en un servidor).
+Eso significa que:
+
+- ✅ El tablero se ve igual en todos los dispositivos (sin números tapados).
+- ✅ Sirve perfecto si **Leidy** es quien aparta los números desde su celular y comparte capturas.
+- ✅ El comprobante se puede mostrar o capturar para confirmarle el número a cada persona.
+- ⚠️ Si varias personas apartan desde sus propios celulares, cada una verá solo lo suyo.
+
+Para que **todos vean el mismo tablero en tiempo real** hace falta una base de datos
+(gratis con Supabase o Firebase) y una pequeña conexión. Es el siguiente paso si lo necesitas.
+
+---
+
+## Texto para WhatsApp
+
+💙 ¡GRAN RIFA SOLIDARIA POR LEIDY DAYANA! 💙
+Apóyame participando en esta causa y gánate un espectacular premio en efectivo.
+
+💰 Premio: $200.000
+🎟️ Valor de la boleta: $10.000
+📅 Juega: Sábado 21 de noviembre de 2026
+🎱 Modalidad: Últimas 2 cifras del Premio Mayor de la Lotería de Boyacá (10:30 p. m.)
+
+📲 ¿Cómo participar?
+1. Mira los números disponibles
+2. Elige el tuyo y escribe tu nombre
+3. Paga tu boleta y ¡listo! 💙
