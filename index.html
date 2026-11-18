@@ -180,6 +180,20 @@
   .panel-head .sub{
     margin:6px 0 0;font-size:12px;font-weight:500;color:var(--muted);letter-spacing:.01em;
   }
+  .live{
+    display:inline-flex;align-items:center;gap:7px;flex-shrink:0;
+    font-size:8.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
+    color:#3f7358;background:#f1f9f3;border:1px solid #dceee1;
+    border-radius:999px;padding:7px 11px;white-space:nowrap;
+  }
+  .live i{
+    width:6px;height:6px;border-radius:50%;background:#2f9e68;
+    box-shadow:0 0 0 3px rgba(47,158,104,.16);
+    animation:pulse 2.4s ease-in-out infinite;
+  }
+  .live.off{color:#9a8c72;background:#faf5ea;border-color:#ecdfc8}
+  .live.off i{background:#c2ad86;box-shadow:none;animation:none}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   .head-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 
   /* resumen */
@@ -445,7 +459,7 @@
   @media print{
     body{background:#fff}
     body::after{display:none}
-    .hero-actions,.search,.legend,.head-actions,.progress,.progress-label,footer{display:none !important}
+    .hero-actions,.search,.legend,.head-actions,.live,.progress,.progress-label,footer{display:none !important}
     .wrap{padding:0;max-width:none}
     .hero{background:#fff;color:#000;box-shadow:none;border:1px solid #ccc;border-radius:0;padding:16px}
     .hero::before{display:none}
@@ -501,6 +515,7 @@
         <h2>Elige tu número</h2>
         <p class="sub">Toca un número libre y escribe tu nombre.</p>
       </div>
+      <span class="live" id="live"><i></i><span id="liveText">Conectando…</span></span>
     </div>
 
     <div class="summary">
@@ -613,21 +628,7 @@
     document.body.removeChild(ta);
   }
 
-  function b64urlEncode(str) {
-    var bytes = new TextEncoder().encode(str), bin = '';
-    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
-  function b64urlDecode(s) {
-    s = s.replace(/-/g, '+').replace(/_/g, '/');
-    var p = (4 - (s.length % 4)) % 4;
-    while (p--) s += '=';
-    var bin = atob(s), bytes = new Uint8Array(bin.length);
-    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return new TextDecoder().decode(bytes);
-  }
-
-  /* ================= PERSISTENCIA ================= */
+  /* ================= PERSISTENCIA LOCAL ================= */
   function load() {
     try {
       var raw = localStorage.getItem(KEY);
@@ -643,6 +644,58 @@
   }
 
   function soldCount() { return Object.keys(state.sold).length; }
+
+  /* ================= TABLERO COMPARTIDO ================= */
+  var ONLINE = location.protocol === 'http:' || location.protocol === 'https:';
+  var lastStamp = -1;
+  var busy = false;
+
+  function setLive(mode) {
+    var chip = el('live'), text = el('liveText');
+    if (!chip || !text) return;
+    if (!ONLINE) { chip.hidden = true; return; }
+    chip.hidden = false;
+    chip.classList.toggle('off', mode !== 'on');
+    text.textContent = mode === 'on' ? 'En vivo' : (mode === 'off' ? 'Sin conexión' : 'Conectando…');
+  }
+
+  function applyBoard(board) {
+    if (!board || typeof board.sold !== 'object' || !board.sold) return false;
+    var stamp = Number(board.updatedAt) || 0;
+    if (stamp === lastStamp) return false;
+    lastStamp = stamp;
+    state.sold = board.sold;
+    normalizeSold();
+    save();
+    renderAll();
+    return true;
+  }
+
+  async function pull() {
+    if (!ONLINE) return null;
+    try {
+      var r = await fetch('/api/board', { cache: 'no-store' });
+      if (!r.ok) throw new Error('http');
+      var data = await r.json();
+      setLive('on');
+      applyBoard(data.board);
+      return data.board;
+    } catch (e) {
+      setLive('off');
+      return null;
+    }
+  }
+
+  async function pushAction(action, num, name, phone) {
+    var r = await fetch('/api/board', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action, num: num, name: name || '', phone: phone || '' })
+    });
+    var data = {};
+    try { data = await r.json(); } catch (e) { /* sin cuerpo */ }
+    return { status: r.status, ok: r.ok, data: data };
+  }
 
   /* ================= RENDER ================= */
   function buildGrid() {
@@ -754,19 +807,55 @@
     var nameInput = el('cName');
     setTimeout(function () { nameInput.focus(); }, 70);
 
-    el('claimForm').addEventListener('submit', function (e) {
+    el('claimForm').addEventListener('submit', async function (e) {
       e.preventDefault();
       var name = (el('cName').value || '').trim().replace(/\s+/g, ' ');
       var phone = (el('cPhone').value || '').trim();
 
       if (name.length < 2) { toast('Escribe tu nombre'); nameInput.focus(); return; }
+      if (busy) return;
 
-      state.sold[num] = {
-        name: name,
-        phone: phone,
-        ts: (state.sold[num] && state.sold[num].ts) || Date.now()
-      };
-      save();
+      var submit = el('claimForm').querySelector('button[type="submit"]');
+      var label = submit.textContent;
+      busy = true;
+      submit.disabled = true;
+      submit.textContent = 'Guardando…';
+
+      if (ONLINE) {
+        var res = null;
+        try { res = await pushAction(isEdit ? 'edit' : 'claim', num, name, phone); }
+        catch (err) { res = null; }
+
+        busy = false;
+        submit.disabled = false;
+        submit.textContent = label;
+
+        if (!res) { toast('Sin conexión. Intenta de nuevo.'); return; }
+
+        if (res.status === 409) {
+          applyBoard(res.data.board);
+          closeModal();
+          toast('Ese número acaba de ser apartado');
+          return;
+        }
+        if (!res.ok || !res.data.board) { toast('No se pudo guardar. Intenta otra vez.'); return; }
+
+        lastStamp = Number(res.data.board.updatedAt) || 0;
+        state.sold = res.data.board.sold;
+        normalizeSold();
+        save();
+      } else {
+        state.sold[num] = {
+          name: name,
+          phone: phone,
+          ts: (state.sold[num] && state.sold[num].ts) || Date.now()
+        };
+        busy = false;
+        submit.disabled = false;
+        submit.textContent = label;
+        save();
+      }
+
       closeModal();
       renderAll();
 
@@ -829,10 +918,27 @@
 
     el('dEdit').addEventListener('click', function () { openClaim(num, true); });
 
-    el('dFree').addEventListener('click', function () {
+    el('dFree').addEventListener('click', async function () {
       if (!confirm('¿Liberar el número ' + num + '? Se borrará el nombre de ' + o.name + '.')) return;
-      delete state.sold[num];
-      save();
+
+      if (ONLINE) {
+        var res = null;
+        try { res = await pushAction('release', num); } catch (err) { res = null; }
+        if (!res) { toast('Sin conexión. Intenta de nuevo.'); return; }
+        if (!res.ok && res.status !== 404) { toast('No se pudo liberar. Intenta otra vez.'); return; }
+        if (res.data && res.data.board) {
+          lastStamp = Number(res.data.board.updatedAt) || 0;
+          state.sold = res.data.board.sold;
+          save();
+        } else {
+          delete state.sold[num];
+          save();
+        }
+      } else {
+        delete state.sold[num];
+        save();
+      }
+
       closeModal();
       renderAll();
       toast('Número ' + num + ' liberado');
@@ -869,24 +975,16 @@
   }
 
   /* ================= COMPARTIR ================= */
-  function buildShareLink() {
-    var compact = { s: {} };
-    Object.keys(state.sold).forEach(function (k) {
-      compact.s[k] = [state.sold[k].name, state.sold[k].phone || ''];
-    });
-    var url = (location.origin && location.origin !== 'null')
-      ? location.origin + location.pathname + location.search
-      : location.href.split('#')[0];
-    return url + '#r=' + b64urlEncode(JSON.stringify(compact));
-  }
-
   function shareBoard() {
     var sold = soldCount();
     var nums = Object.keys(state.sold).sort(function (a, b) { return Number(a) - Number(b); });
     var summary = CFG.title + ' · ' + CFG.beneficiary +
       '\nApartados (' + sold + '): ' + (sold ? nums.join(', ') : '—') +
       '\nDisponibles: ' + Math.max(0, CFG.total - sold) +
-      '\nPremio ' + money(CFG.prize) + ' · Boleta ' + money(CFG.price);
+      '\nPremio ' + money(CFG.prize) + ' · Boleta ' + money(CFG.price) +
+      '\nSorteo: ' + CFG.dateLong;
+
+    var url = location.href.split('#')[0];
 
     if (location.protocol === 'file:') {
       copyText(summary);
@@ -894,39 +992,13 @@
       return;
     }
 
-    var link = buildShareLink();
     if (navigator.share) {
-      navigator.share({ title: CFG.title + ' · ' + CFG.beneficiary, text: summary, url: link })
-        .catch(function () { copyText(link); });
+      navigator.share({ title: CFG.title + ' · ' + CFG.beneficiary, text: summary, url: url })
+        .catch(function () { copyText(url); });
     } else {
-      copyText(link);
+      copyText(url);
       toast('Enlace copiado');
     }
-  }
-
-  /* ================= ENLACE CON DATOS ================= */
-  function importFromHash() {
-    var m = (location.hash || '').match(/^#r=([A-Za-z0-9\-_]+)$/);
-    if (!m) return 0;
-    var data;
-    try { data = JSON.parse(b64urlDecode(m[1])); } catch (e) { return 0; }
-    if (!data || !data.s) return 0;
-
-    var added = 0;
-    Object.keys(data.s).forEach(function (k) {
-      if (state.sold[k]) return;
-      var v = data.s[k] || [];
-      state.sold[k] = {
-        name: String(v[0] || 'Participante').slice(0, 40),
-        phone: String(v[1] || '').slice(0, 20),
-        ts: Date.now()
-      };
-      added++;
-    });
-
-    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* file:// */ }
-    normalizeSold();
-    return added;
   }
 
   /* ================= EVENTOS ================= */
@@ -952,10 +1024,21 @@
 
   /* ================= INICIO ================= */
   load();
-  var imported = importFromHash();
-  if (imported) save();
   renderAll();
-  if (imported) toast('Se cargaron ' + imported + ' números');
+
+  if (ONLINE) {
+    setLive('wait');
+    pull();
+    setInterval(function () {
+      if (!document.hidden && !busy) pull();
+    }, 8000);
+    window.addEventListener('focus', function () { if (!busy) pull(); });
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && !busy) pull();
+    });
+  } else {
+    setLive('offline');
+  }
 
   window.addEventListener('storage', function (e) {
     if (e.key === KEY) { load(); renderAll(); }
