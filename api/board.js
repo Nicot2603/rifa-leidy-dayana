@@ -6,6 +6,8 @@ const PATHNAME = 'board.json';
 const TOTAL = 100;
 const NAME_MAX = 40;
 const PHONE_MAX = 20;
+const WRITE_ATTEMPTS = 3;
+const RETRY_MS = 250;
 
 function send(res, code, data) {
   res.statusCode = code;
@@ -22,12 +24,11 @@ function clean(value, max) {
 }
 
 async function readBoard() {
-  const { blobs } = await list({ prefix: PATHNAME, limit: 10 });
-  const found = blobs.find((b) => b.pathname === PATHNAME);
-  if (!found) return { sold: {}, updatedAt: 0 };
+  const url = await blobUrl();
+  if (!url) return { sold: {}, updatedAt: 0 };
 
-  const url = found.url + (found.url.includes('?') ? '&' : '?') + 'v=' + Date.now();
-  const response = await fetch(url, { cache: 'no-store' });
+  const bust = url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now();
+  const response = await fetch(bust, { cache: 'no-store' });
   if (!response.ok) throw new Error('No se pudo leer el tablero');
 
   const data = await response.json();
@@ -37,16 +38,65 @@ async function readBoard() {
   };
 }
 
+// URL estable del tablero (se recuerda para leer siempre la última versión)
+let cachedUrl = null;
+
+async function blobUrl() {
+  if (cachedUrl) return cachedUrl;
+  const { blobs } = await list({ prefix: PATHNAME, limit: 10 });
+  const found = blobs.find((b) => b.pathname === PATHNAME);
+  cachedUrl = found ? found.url : null;
+  return cachedUrl;
+}
+
 async function writeBoard(sold) {
   const board = { sold, updatedAt: Date.now() };
-  await put(PATHNAME, JSON.stringify(board), {
-    access: 'public',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: 'application/json',
-    cacheControlMaxAge: 0
-  });
+  const payload = JSON.stringify(board);
+
+  for (let attempt = 1; attempt <= WRITE_ATTEMPTS; attempt++) {
+    const result = await put(PATHNAME, payload, {
+      access: 'public',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      contentType: 'application/json',
+      cacheControlMaxAge: 0
+    });
+    if (result && result.url) cachedUrl = result.url;
+
+    if (await isReadable(board.updatedAt)) break;
+    if (attempt < WRITE_ATTEMPTS) await sleep(RETRY_MS);
+  }
+
   return board;
+}
+
+// Confirma que la versión recién escrita ya se puede leer
+async function isReadable(stamp) {
+  try {
+    const url = await blobUrl();
+    if (!url) return false;
+
+    const bust = url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now();
+    const response = await fetch(bust, { cache: 'no-store' });
+    if (!response.ok) return false;
+
+    const data = await response.json();
+    return Number(data && data.updatedAt) >= stamp;
+  } catch (e) {
+    return false;
+  }
+}
+
+function sleep(ms) {
+  return new Promise(function (done) { setTimeout(done, ms); });
+}
+
+// Serializa las escrituras dentro de la misma instancia
+let chain = Promise.resolve();
+function lock(task) {
+  const next = chain.then(task, task);
+  chain = next.then(function () {}, function () {});
+  return next;
 }
 
 module.exports = async (req, res) => {
@@ -74,29 +124,34 @@ module.exports = async (req, res) => {
       return send(res, 400, { ok: false, error: 'number' });
     }
 
-    const sold = (await readBoard()).sold;
-
-    if (action === 'claim') {
-      if (sold[num]) {
-        return send(res, 409, { ok: false, error: 'taken', board: { sold, updatedAt: Date.now() } });
-      }
-      const name = clean(body.name, NAME_MAX).replace(/\s+/g, ' ');
-      if (name.length < 2) return send(res, 400, { ok: false, error: 'name' });
-      sold[num] = { name, phone: clean(body.phone, PHONE_MAX), ts: Date.now() };
-    } else if (action === 'edit') {
-      if (!sold[num]) return send(res, 404, { ok: false, error: 'missing' });
-      const name = clean(body.name, NAME_MAX).replace(/\s+/g, ' ');
-      if (name.length < 2) return send(res, 400, { ok: false, error: 'name' });
-      sold[num] = { name, phone: clean(body.phone, PHONE_MAX), ts: sold[num].ts || Date.now() };
-    } else if (action === 'release') {
-      if (!sold[num]) return send(res, 404, { ok: false, error: 'missing' });
-      delete sold[num];
-    } else {
+    if (!['claim', 'edit', 'release'].includes(action)) {
       return send(res, 400, { ok: false, error: 'action' });
     }
 
-    const board = await writeBoard(sold);
-    return send(res, 200, { ok: true, board });
+    // Un turno a la vez: leer, cambiar y guardar sin pisar cambios de otros
+    return await lock(async () => {
+      const sold = (await readBoard()).sold;
+
+      if (action === 'claim') {
+        if (sold[num]) {
+          return send(res, 409, { ok: false, error: 'taken', board: { sold, updatedAt: Date.now() } });
+        }
+        const name = clean(body.name, NAME_MAX).replace(/\s+/g, ' ');
+        if (name.length < 2) return send(res, 400, { ok: false, error: 'name' });
+        sold[num] = { name, phone: clean(body.phone, PHONE_MAX), ts: Date.now() };
+      } else if (action === 'edit') {
+        if (!sold[num]) return send(res, 404, { ok: false, error: 'missing' });
+        const name = clean(body.name, NAME_MAX).replace(/\s+/g, ' ');
+        if (name.length < 2) return send(res, 400, { ok: false, error: 'name' });
+        sold[num] = { name, phone: clean(body.phone, PHONE_MAX), ts: sold[num].ts || Date.now() };
+      } else {
+        if (!sold[num]) return send(res, 404, { ok: false, error: 'missing' });
+        delete sold[num];
+      }
+
+      const board = await writeBoard(sold);
+      return send(res, 200, { ok: true, board });
+    });
   } catch (err) {
     return send(res, 500, { ok: false, error: 'server', message: String((err && err.message) || err) });
   }
