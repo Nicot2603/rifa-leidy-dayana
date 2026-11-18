@@ -40,11 +40,20 @@ function snapshotTime(blob) {
 }
 
 // Devuelve los snapshots del más nuevo al más viejo
-async function snapshots() {
+async function snapshots(attempt) {
+  attempt = attempt || 1;
   const { blobs } = await list({ prefix: PREFIX, limit: MAX_SNAPSHOTS });
-  return blobs
+  const found = blobs
     .map(function (b) { return { url: b.url, at: snapshotTime(b) }; })
     .sort(function (a, b) { return b.at - a.at; });
+
+  // Si el índice aún no muestra nada, se reintenta antes de dar el tablero por vacío
+  if (!found.length && attempt < 3) {
+    await new Promise(function (done) { setTimeout(done, 250); });
+    return snapshots(attempt + 1);
+  }
+
+  return found;
 }
 
 async function readUrl(url) {
