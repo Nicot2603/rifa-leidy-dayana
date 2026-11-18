@@ -154,6 +154,8 @@
   .btn.soft:hover{background:#fdf8ee;border-color:#ddcfb4}
   .btn.danger{background:transparent;color:#a4402f;border:1px solid #eccdc5}
   .btn.danger:hover{background:#fdf1ee}
+  .btn.wa{background:#1d7a4c;color:#f7fbf7;box-shadow:0 14px 26px -16px rgba(29,122,76,.9)}
+  .btn.wa:hover{background:#176340}
   .btn.sm{padding:10px 16px;font-size:11px;letter-spacing:.06em}
   .btn.block{width:100%}
   .btn.link{
@@ -570,7 +572,8 @@
     total: 100,
     dateLong: 'Sábado 21 de noviembre de 2026',
     dateShort: 'Sáb 21 de noviembre',
-    draw: 'Últimas 2 cifras · Lotería de Boyacá · 10:30 p.m.'
+    draw: 'Últimas 2 cifras · Lotería de Boyacá · 10:30 p.m.',
+    whatsapp: '573112756483'
   };
 
   var state = { sold: {} };
@@ -590,6 +593,17 @@
 
   function digitsCount() { return String(Math.max(1, CFG.total - 1)).length; }
   function pad(n) { var s = String(n); while (s.length < digitsCount()) { s = '0' + s; } return s; }
+
+  // Mensaje que le llega a Leidy cuando alguien aparta su número
+  function waLink(num, name, phone) {
+    if (!CFG.whatsapp) return '';
+    var msg = 'Hola ' + CFG.beneficiary + ' 👋 Soy ' + name + '. ' +
+      'Acabo de apartar el número ' + num + ' de la ' + CFG.title +
+      ' (boleta ' + money(CFG.price) + ' · sorteo ' + CFG.dateShort + ').' +
+      (phone ? ' Mi celular es ' + phone + '.' : '') +
+      ' Te escribo para confirmar mi número y coordinar el pago.';
+    return 'https://wa.me/' + CFG.whatsapp + '?text=' + encodeURIComponent(msg);
+  }
 
   function normalizeSold() {
     var fixed = {};
@@ -798,7 +812,7 @@
         '</label>' +
         '<div class="m-actions">' +
           '<button type="button" class="btn soft" data-close>Cancelar</button>' +
-          '<button type="submit" class="btn dark">' + (isEdit ? 'Guardar' : 'Apartar') + '</button>' +
+          '<button type="submit" class="btn dark">' + (isEdit ? 'Guardar' : 'Apartar y avisar') + '</button>' +
         '</div>' +
       '</form>' +
       '<p class="m-note">Boleta ' + money(CFG.price) + ' · Sorteo ' + CFG.dateShort + '</p>'
@@ -815,6 +829,19 @@
       if (name.length < 2) { toast('Escribe tu nombre'); nameInput.focus(); return; }
       if (busy) return;
 
+      // Se abre WhatsApp dentro del mismo clic (los navegadores solo permiten
+      // abrir ventanas así). Si el número no queda apartado, se cierra sola.
+      var waWin = null;
+      if (ONLINE && !isEdit && CFG.whatsapp) {
+        try { waWin = window.open(waLink(num, name, phone), '_blank'); }
+        catch (err) { waWin = null; }
+      }
+      function closeWa() {
+        if (waWin && !waWin.closed) {
+          try { waWin.close(); } catch (err) { /* sin permiso */ }
+        }
+      }
+
       var submit = el('claimForm').querySelector('button[type="submit"]');
       var label = submit.textContent;
       busy = true;
@@ -830,15 +857,16 @@
         submit.disabled = false;
         submit.textContent = label;
 
-        if (!res) { toast('Sin conexión. Intenta de nuevo.'); return; }
+        if (!res) { closeWa(); toast('Sin conexión. Intenta de nuevo.'); return; }
 
         if (res.status === 409) {
+          closeWa();
           applyBoard(res.data.board);
           closeModal();
           toast('Ese número acaba de ser apartado');
           return;
         }
-        if (!res.ok || !res.data.board) { toast('No se pudo guardar. Intenta otra vez.'); return; }
+        if (!res.ok || !res.data.board) { closeWa(); toast('No se pudo guardar. Intenta otra vez.'); return; }
 
         lastStamp = Number(res.data.board.updatedAt) || 0;
         state.sold = res.data.board.sold;
@@ -883,9 +911,14 @@
         '<div class="t-line"><span>Sorteo</span><b>' + esc(CFG.dateShort) + '</b></div>' +
       '</div>' +
       '<div class="m-actions" style="margin-top:18px">' +
-        '<button class="btn dark block" data-close>Listo</button>' +
+        (CFG.whatsapp
+          ? '<a class="btn wa block" href="' + waLink(num, o.name, o.phone) + '" target="_blank" rel="noopener">Enviar por WhatsApp</a>'
+          : '') +
       '</div>' +
-      '<p class="m-note">Guarda este comprobante como confirmación de tu número.</p>'
+      '<div class="m-actions" style="margin-top:10px">' +
+        '<button class="btn soft block" data-close>Listo</button>' +
+      '</div>' +
+      '<p class="m-note">Guarda este comprobante y envía el mensaje a ' + esc(CFG.beneficiary) + ' para confirmar tu número.</p>'
     );
   }
 
