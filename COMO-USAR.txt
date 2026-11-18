@@ -9,10 +9,10 @@ Afiche para estados: **afiche-rifa.png** (1080×1920)
 
 ## Cómo se usa
 
-1. Abrir `index.html` (doble clic o el enlace ya publicado).
+1. Abrir el enlace publicado (o `index.html` en local).
 2. Tocar un número libre del tablero.
 3. Escribir **nombre y apellido** (el celular es opcional).
-4. Al guardar, el número se **tapa con el nombre** y aparece un **comprobante** con el número, el valor de la boleta y la fecha.
+4. Al guardar, el número se **tapa con el nombre** en el tablero de todos.
 5. El comprobante muestra el número, el valor de la boleta y la fecha (se puede tomar captura).
 6. Tocar un número ya tapado muestra quién lo tiene, permite **editarlo** o **liberarlo**.
 
@@ -30,39 +30,52 @@ El tablero muestra **vendidos**, **disponibles** y **recaudado**, con barra de p
 
 ---
 
-## Cómo publicarlo en Vercel
+## Dónde está publicado
 
-**Opción rápida (sin instalar nada):**
-1. Entra a https://vercel.com/new
-2. Arrastra esta carpeta completa (o súbela como .zip) en la zona de carga.
-3. Pulsa **Deploy**. Vercel detecta `index.html` y publica el sitio.
-4. Te da un enlace tipo `https://gran-rifa-leidy.vercel.app` — ese es el que compartes.
+- **Sitio:** https://rifa-leidy-dayana.vercel.app
+- **Repositorio:** https://github.com/Nicot2603/rifa-leidy-dayana
+- **Panel:** https://vercel.com/carol-s-projects-004b629a/rifa-leidy-dayana
 
-**Opción con la terminal:**
+Para actualizar el sitio, después de editar `index.html`:
+
 ```
-npm i -g vercel
 cd C:\Users\ASUS\Downloads\leidy
-vercel
-vercel --prod
+git add -A
+git commit -m "cambio"
+git push
 ```
 
-Para cambiar el premio, el precio o la fecha después de publicar, se edita el bloque
-`var CFG = { ... }` dentro de `index.html` y se vuelve a subir.
+Vercel publica solo en unos segundos (el repositorio ya está conectado).
+
+Para cambiar el premio, el precio o la fecha se edita el bloque
+`var CFG = { ... }` dentro de `index.html`.
 
 ---
 
-## Importante (leer antes de publicar)
+## Importante
 
-Los apartados se guardan en el **navegador de cada persona** (no en un servidor).
-Eso significa que:
+El tablero es **compartido y en vivo**: todos los que abran el enlace ven los mismos
+números tapados y los nombres, y se actualiza solo cada pocos segundos.
 
-- ✅ El tablero se ve igual en todos los dispositivos (sin números tapados).
-- ✅ Sirve perfecto si **Leidy** es quien aparta los números desde su celular y comparte capturas.
-- ✅ El comprobante se puede mostrar o capturar para confirmarle el número a cada persona.
-- ⚠️ Si varias personas apartan desde sus propios celulares, cada una verá solo lo suyo.
+- ✅ Cada persona aparta su número desde su propio celular y **Leidy lo ve al instante**
+  en el sitio (entra a 👥 Participantes para tener la lista completa).
+- ✅ Arriba del tablero aparece el indicador **En vivo** cuando hay conexión.
+- ✅ No requiere cuentas ni bases de datos externas: usa el almacenamiento de Vercel
+  (`Vercel Blob`) a través de la función `api/board.js`.
+- ⚠️ Cualquiera con el enlace puede liberar un número. Si quieres proteger eso con un
+  PIN o dejar la lista de celulares visible solo para Leidy, se puede agregar.
+- ⚠️ Si dos personas intentan el mismo número al mismo tiempo, la segunda recibe el aviso
+  "Ese número acaba de ser apartado".
 
-Para que **todos vean el mismo tablero en tiempo real** hace falta una base de datos
-(gratis con Supabase o Firebase) y una pequeña conexión. Es el siguiente paso si lo necesitas.
+---
+
+## Cómo está hecho
+
+- `index.html` — la app (una sola página, sin frameworks).
+- `api/board.js` — función de Vercel que lee y guarda el tablero en Vercel Blob.
+- `package.json` — dependencia `@vercel/blob`.
+
+Cada `git push` a `main` se publica automáticamente en Vercel.
 
 ---
 
