@@ -1,6 +1,6 @@
 'use strict';
 
-const { put, list } = require('@vercel/blob');
+const { put, head } = require('@vercel/blob');
 
 const PATHNAME = 'board.json';
 const TOTAL = 100;
@@ -29,6 +29,11 @@ async function readBoard() {
 
   const bust = url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now();
   const response = await fetch(bust, { cache: 'no-store' });
+
+  if (response.status === 404) {
+    cachedUrl = null;
+    return { sold: {}, updatedAt: 0 };
+  }
   if (!response.ok) throw new Error('No se pudo leer el tablero');
 
   const data = await response.json();
@@ -43,9 +48,13 @@ let cachedUrl = null;
 
 async function blobUrl() {
   if (cachedUrl) return cachedUrl;
-  const { blobs } = await list({ prefix: PATHNAME, limit: 10 });
-  const found = blobs.find((b) => b.pathname === PATHNAME);
-  cachedUrl = found ? found.url : null;
+  try {
+    const info = await head(PATHNAME);
+    cachedUrl = info.url;
+  } catch (err) {
+    if (err && err.name === 'BlobNotFoundError') cachedUrl = null;
+    else throw err;
+  }
   return cachedUrl;
 }
 
