@@ -13,8 +13,8 @@ Afiche para estados: **afiche-rifa.png** (1080×1920)
 2. Tocar un número libre del tablero.
 3. Escribir **nombre y apellido** (el celular es opcional).
 4. Al guardar, el número se **tapa con el nombre** en el tablero de todos.
-5. Se abre WhatsApp con un mensaje listo para **Leidy (311 275 6483)**: dice qué número
-   eligió la persona, el valor de la boleta y su celular. Solo hay que tocar **Enviar**.
+5. Se abre WhatsApp con un mensaje corto para **Leidy (311 275 6483)**:
+   “Hola, aparté este número 07. María Pérez.” Solo hay que tocar **Enviar**.
 6. El comprobante muestra el número, el valor de la boleta y la fecha, y tiene el botón
    **Enviar por WhatsApp** por si la ventana no se abrió sola.
 7. Tocar un número ya tapado muestra quién lo tiene, permite **editarlo** o **liberarlo**.

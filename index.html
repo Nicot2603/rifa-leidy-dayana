@@ -595,13 +595,9 @@
   function pad(n) { var s = String(n); while (s.length < digitsCount()) { s = '0' + s; } return s; }
 
   // Mensaje que le llega a Leidy cuando alguien aparta su número
-  function waLink(num, name, phone) {
+  function waLink(num, name) {
     if (!CFG.whatsapp) return '';
-    var msg = 'Hola ' + CFG.beneficiary + '. Soy ' + name + '. ' +
-      'Acabo de apartar el número ' + num + ' de la ' + CFG.title + '. ' +
-      'El valor de la boleta es de ' + Number(CFG.price) + ' pesos y el sorteo es el ' + CFG.dateLong + '. ' +
-      (phone ? 'Mi celular es ' + phone + '. ' : '') +
-      'Te escribo para confirmar mi número y coordinar el pago.';
+    var msg = 'Hola, aparté este número ' + num + '. ' + name + '.';
     return 'https://wa.me/' + CFG.whatsapp + '?text=' + encodeURIComponent(msg);
   }
 
@@ -833,7 +829,7 @@
       // abrir ventanas así). Si el número no queda apartado, se cierra sola.
       var waWin = null;
       if (ONLINE && !isEdit && CFG.whatsapp) {
-        try { waWin = window.open(waLink(num, name, phone), '_blank'); }
+        try { waWin = window.open(waLink(num, name), '_blank'); }
         catch (err) { waWin = null; }
       }
       function closeWa() {
@@ -912,7 +908,7 @@
       '</div>' +
       '<div class="m-actions" style="margin-top:18px">' +
         (CFG.whatsapp
-          ? '<a class="btn wa block" href="' + waLink(num, o.name, o.phone) + '" target="_blank" rel="noopener">Enviar por WhatsApp</a>'
+          ? '<a class="btn wa block" href="' + waLink(num, o.name) + '" target="_blank" rel="noopener">Enviar por WhatsApp</a>'
           : '') +
       '</div>' +
       '<div class="m-actions" style="margin-top:10px">' +
