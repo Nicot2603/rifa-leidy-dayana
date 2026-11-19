@@ -96,7 +96,7 @@ async function readEvents() {
   // Si la tabla está vacía, hidrata desde el store anterior (Vercel Blob)
   const seeded = await seedFromBlobs().catch(function (e) { return []; });
   if (seeded.length) {
-    await seedToSupabase(seeded);
+    try { await seedToSupabase(seeded); } catch (e) { /* la tabla puede no existir aun; se reintenta al escribir */ }
   }
   return seeded;
 }
