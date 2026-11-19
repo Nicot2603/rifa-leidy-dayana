@@ -14,6 +14,8 @@ Toca un número libre, escribe tu nombre y el número queda tapado con tu nombre
 El tablero es compartido: todos ven el mismo estado y se actualiza cada pocos segundos.
 
 - **Pago:** Nequi **311 275 6483** o llave **@3112756483**.
+- **Admin:** botón “Admin” en el tablero (clave `leidy2611`) para ver lo recaudado,
+  marcar pagos y liberar números. Los demás usuarios no pueden hacerlo.
 - `index.html` — la app (una sola página, sin frameworks).
 - `api/board.js` — función de Vercel que lee y guarda el tablero en Vercel Blob.
 - `package.json` — dependencia `@vercel/blob`.

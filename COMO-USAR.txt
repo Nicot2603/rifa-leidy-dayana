@@ -33,6 +33,27 @@ El tablero muestra **vendidos**, **disponibles** y **recaudado**, con barra de p
 
 ---
 
+## Modo administrador (solo Leidy)
+
+Arriba del tablero hay un botón **Admin**. Al tocarlo pide la clave:
+
+**Clave: `leidy2611`**
+
+Con el modo admin activo:
+
+- Se ve el **Recaudado** (los demás solo ven vendidos y disponibles).
+- Cada número muestra **Pagado / Sin pagar**, y se puede marcar o desmarcar.
+- Aparece **Liberar número** (solo el admin puede liberar).
+- Los participantes muestran una columna **Pago**.
+
+Para salir, toca **Admin activo** y confirma. La clave se recuerda solo mientras la
+pestaña esté abierta.
+
+Para cambiar la clave: `vercel env add ADMIN_PIN --value "nuevaClave" --environment production --force`
+y volver a publicar.
+
+---
+
 ## Dónde está publicado
 
 - **Sitio:** https://rifa-leidy-dayana.vercel.app
