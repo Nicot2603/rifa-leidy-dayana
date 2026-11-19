@@ -13,8 +13,8 @@ Afiche para estados: **afiche-rifa.png** (1080×1920)
 2. Tocar un número libre del tablero.
 3. Escribir **nombre y apellido** (el celular es opcional).
 4. Al guardar, el número se **tapa con el nombre** en el tablero de todos.
-5. Se abre WhatsApp con un mensaje corto para **Leidy (311 275 6483)**:
-   “Hola, aparto el número 07”. Solo hay que tocar **Enviar**.
+5. Abajo del tablero (y en el comprobante) están los datos para pagar la boleta:
+   **Nequi 311 275 6483** o **llave @3112756483**.
 6. El comprobante muestra el número, el valor de la boleta y la fecha, y tiene el botón
    **Enviar por WhatsApp** por si la ventana no se abrió sola.
 7. Tocar un número ya tapado muestra quién lo tiene, permite **editarlo** o **liberarlo**.
@@ -63,8 +63,8 @@ números tapados y los nombres, y se actualiza solo cada pocos segundos.
 - ✅ Cada persona aparta su número desde su propio celular y **Leidy lo ve al instante**
   en el sitio (entra a 👥 Participantes para tener la lista completa).
 - ✅ Arriba del tablero aparece el indicador **En vivo** cuando hay conexión.
-- ✅ Al apartar, se abre WhatsApp con el mensaje para **Leidy al 311 275 6483**; si el
-  navegador bloquea la ventana, el comprobante tiene el botón **Enviar por WhatsApp**.
+- ✅ Para pagar: **Nequi 311 275 6483** o **llave @3112756483**. Los datos están abajo
+  del tablero y en el comprobante de cada número.
 - ✅ No requiere cuentas ni bases de datos externas: usa el almacenamiento de Vercel
   (`Vercel Blob`) a través de la función `api/board.js`.
 - ⚠️ Cualquiera con el enlace puede liberar un número. Si quieres proteger eso con un
