@@ -204,7 +204,7 @@ module.exports = async (req, res) => {
     if (!['claim', 'edit', 'release', 'paid'].includes(action)) {
       return send(res, 400, { ok: false, error: 'action' });
     }
-    if ((action === 'release' || action === 'paid') && !isAdmin(body.pin)) {
+    if ((action === 'release' || action === 'paid' || action === 'edit') && !isAdmin(body.pin)) {
       return send(res, 401, { ok: false, error: 'admin' });
     }
 
