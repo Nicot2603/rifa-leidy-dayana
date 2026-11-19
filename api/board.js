@@ -259,7 +259,3 @@ module.exports = async (req, res) => {
     return send(res, 500, { ok: false, error: 'server', message: String((err && err.message) || err) });
   }
 };
-  } catch (err) {
-    return send(res, 500, { ok: false, error: 'server', message: String((err && err.message) || err) });
-  }
-};
