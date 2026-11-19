@@ -207,7 +207,7 @@
 
     el('stSold').textContent = nums.length + ' / ' + TOTAL;
     el('stFree').textContent = Math.max(0, TOTAL - nums.length);
-    el('stMoney').textContent = money(nums.length * PRICE);
+    el('stMoney').textContent = money(paidCount * PRICE);
     el('stPaid').textContent = paidCount;
 
     var q = filter.trim().toLowerCase();
