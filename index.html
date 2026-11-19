@@ -344,6 +344,84 @@
   }
   .pay-note b{color:#3f7358;font-weight:700}
 
+  /* aviso de pago dentro del comprobante */
+  .paybig{
+    margin-top:12px;padding:14px 14px 12px;text-align:center;
+    border:1px solid #e8d9ba;border-radius:20px;
+    background:
+      radial-gradient(230px 90px at 50% -12%, #fffdf6, rgba(255,253,246,0) 72%),
+      linear-gradient(180deg,#fffdf8,#fbf4e6);
+    box-shadow:0 20px 34px -28px rgba(120,95,45,.6);
+  }
+  .paybig-k{
+    margin:0;font-size:8px;font-weight:800;letter-spacing:.22em;
+    text-transform:uppercase;color:#a1927a;
+  }
+  .paybig-amount{
+    margin:2px 0 9px;font-family:var(--serif);font-weight:700;
+    font-size:clamp(30px,8vw,36px);line-height:1;letter-spacing:-.01em;
+    color:var(--gold-ink);
+  }
+  .paybig-rows{border-top:1px dashed #e2d5bb;padding-top:2px}
+  .paybig-row{
+    display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+    width:100%;padding:8px 2px;border:0;background:none;cursor:pointer;
+    font-family:var(--sans);text-align:left;-webkit-tap-highlight-color:transparent;
+  }
+  .paybig-row + .paybig-row{border-top:1px solid rgba(226,213,187,.55)}
+  .paybig-row span{
+    font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#a1927a;
+  }
+  .paybig-row b{
+    font-size:15.5px;font-weight:800;letter-spacing:.03em;color:var(--ink);white-space:nowrap;
+  }
+  .paybig-row:active b,.paybig-row:hover b{color:var(--gold-ink)}
+  .paybig-note{margin:8px 0 0;font-size:10.5px;line-height:1.45;color:#9a8c72}
+  .paybig-note b{color:#3f7358;font-weight:800}
+
+  /* datos extras del comprobante */
+  .tick-duo{
+    display:grid;grid-template-columns:1fr 1fr;gap:10px;
+    margin-top:12px;padding-top:9px;border-top:1px dashed #e6dac3;
+  }
+  .tick-duo div{text-align:center}
+  .tick-duo span{
+    display:block;font-size:8px;font-weight:800;letter-spacing:.18em;
+    text-transform:uppercase;color:#a1927a;
+  }
+  .tick-duo b{
+    display:block;margin-top:2px;font-size:11.5px;font-weight:800;color:var(--ink-2);
+  }
+
+  /* pantallas bajas: que todo quepa sin scroll */
+  @media (max-height:720px){
+    .ticket{padding:15px 14px 13px}
+    .ticket .t-num{font-size:46px}
+    .ticket .t-name{font-size:16.5px}
+    .paybig{margin-top:10px;padding:12px 12px 10px}
+    .paybig-amount{font-size:29px;margin-bottom:7px}
+    .paybig-row{padding:6px 2px}
+    .paybig-row b{font-size:14.5px}
+    .paybig-note{font-size:10px;margin-top:6px}
+    .tick-duo{margin-top:10px;padding-top:7px}
+  }
+  @media (max-height:620px){
+    .modal{padding:16px}
+    .ticket{padding:12px 12px 10px;border-radius:15px}
+    .ticket .t-num{font-size:40px;margin:4px 0 1px}
+    .ticket .t-name{font-size:15px}
+    .paybig{margin-top:8px;padding:10px 12px 9px;border-radius:16px}
+    .paybig-amount{font-size:26px;margin:1px 0 5px}
+    .paybig-row{padding:5px 2px}
+    .paybig-row span{font-size:8px}
+    .paybig-row b{font-size:13.5px}
+    .paybig-note{font-size:9.5px;margin-top:4px;line-height:1.4}
+    .tick-duo{margin-top:8px;padding-top:6px}
+    .tick-duo span{font-size:7.5px}
+    .tick-duo b{font-size:10.5px}
+    .m-actions{margin-top:10px !important}
+  }
+
   .paid-on{color:#2f7d55;font-weight:800}
   .paid-off{color:#b08954;font-weight:800}
 
@@ -614,7 +692,10 @@
     total: 100,
     dateLong: 'Sábado 21 de noviembre de 2026',
     dateShort: 'Sáb 21 de noviembre',
-    draw: 'Últimas 2 cifras · Lotería de Boyacá · 10:30 p.m.'
+    draw: 'Últimas 2 cifras · Lotería de Boyacá · 10:30 p.m.',
+    nequi: '311 275 6483',
+    nequiRaw: '3112756483',
+    llave: '@3112756483'
   };
 
   var state = { sold: {} };
@@ -921,20 +1002,42 @@
         '<p class="t-brand">' + esc(CFG.title) + ' · ' + esc(CFG.beneficiary) + '</p>' +
         '<p class="t-num">' + esc(num) + '</p>' +
         '<p class="t-name">' + esc(o.name) + '</p>' +
-        '<div class="t-perf"></div>' +
-        '<div class="t-line"><span>Boleta</span><b>' + money(CFG.price) + '</b></div>' +
-        '<div class="t-line"><span>Premio</span><b>' + money(CFG.prize) + '</b></div>' +
-        '<div class="t-line"><span>Sorteo</span><b>' + esc(CFG.dateShort) + '</b></div>' +
       '</div>' +
-      '<div class="pay" style="margin-top:16px;padding:13px 15px">' +
-        '<div class="pay-row" style="padding-top:0"><span>Nequi</span><b>311 275 6483</b></div>' +
-        '<div class="pay-row"><span>Llave</span><b>@3112756483</b></div>' +
+      '<div class="paybig">' +
+        '<p class="paybig-k">Para pagar tu boleta</p>' +
+        '<p class="paybig-amount">' + money(CFG.price) + '</p>' +
+        '<div class="paybig-rows">' +
+          '<button type="button" class="paybig-row" data-copy="' + esc(CFG.nequiRaw) + '">' +
+            '<span>Nequi</span><b>' + esc(CFG.nequi) + '</b>' +
+          '</button>' +
+          '<button type="button" class="paybig-row" data-copy="' + esc(CFG.llave) + '">' +
+            '<span>Llave</span><b>' + esc(CFG.llave) + '</b>' +
+          '</button>' +
+        '</div>' +
+        '<p class="paybig-note">Toca un dato para copiarlo.<br>Envía el pago y <b>confirma tu número</b> con ' + esc(CFG.beneficiary) + '.</p>' +
       '</div>' +
-      '<div class="m-actions" style="margin-top:14px">' +
-        '<button class="btn soft block" data-close>Listo</button>' +
+      '<div class="tick-duo">' +
+        '<div><span>Premio</span><b>' + money(CFG.prize) + '</b></div>' +
+        '<div><span>Sorteo</span><b>' + esc(CFG.dateShort) + '</b></div>' +
       '</div>' +
-      '<p class="m-note">Paga la boleta y confirma tu número con ' + esc(CFG.beneficiary) + '.</p>'
+      '<div class="m-actions" style="margin-top:12px">' +
+        '<button class="btn dark block" data-close>Listo</button>' +
+      '</div>'
     );
+
+    modal.querySelectorAll('[data-copy]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var v = b.getAttribute('data-copy') || '';
+        var done = function () { toast('Copiado: ' + v); };
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(v).then(done, done);
+            return;
+          }
+        } catch (e) { /* sin permiso de portapapeles */ }
+        done();
+      });
+    });
   }
 
   /* ================= DETALLE ================= */
