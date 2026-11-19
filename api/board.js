@@ -43,26 +43,36 @@ function unb64(value) {
 }
 
 // ev/1795047972570.c.27.eyJuIjoiSmFpbWUiLCJwIjoiIn0.json
-function eventName(action, num, name, phone, ts) {
-  const payload = b64(JSON.stringify({ n: action === 'release' ? '' : name, p: action === 'release' ? '' : phone }));
-  return EVENTS + ts + '.' + action.charAt(0) + '.' + num + '.' + payload + '.json';
+function eventName(action, num, name, phone, ts, paid) {
+  let payload;
+  if (action === 'release') payload = b64(JSON.stringify({}));
+  else if (action === 'paid') payload = b64(JSON.stringify({ v: !!paid }));
+  else payload = b64(JSON.stringify({ n: name, p: phone }));
+
+  const code = action === 'claim' ? 'c' : action === 'edit' ? 'e' : action === 'paid' ? 'p' : 'r';
+  return EVENTS + ts + '.' + code + '.' + num + '.' + payload + '.json';
 }
 
 function parseEvent(pathname) {
   const parts = pathname.slice(EVENTS.length).split('.');
   const ts = Number(parts[0]) || 0;
-  const action = parts[1] === 'c' ? 'claim' : parts[1] === 'e' ? 'edit' : 'release';
+  const code = parts[1];
+  const action = code === 'c' ? 'claim' : code === 'e' ? 'edit' : code === 'p' ? 'paid' : 'release';
   const num = parts[2] || '';
   let name = '';
   let phone = '';
+  let paid = false;
+
   if (action !== 'release') {
     try {
       const data = JSON.parse(unb64(parts[3] || ''));
       name = String(data.n || '');
       phone = String(data.p || '');
+      paid = !!data.v;
     } catch (e) { /* evento ilegible */ }
   }
-  return { ts, action, num, name, phone, sort: pathname };
+
+  return { ts, action, num, name, phone, paid, sort: pathname };
 }
 
 async function eventList(attempt) {
@@ -88,12 +98,14 @@ function replay(events) {
     if (e.action === 'claim') {
       // El primero que apartó el número es el que queda
       if (!sold[e.num] && e.name) {
-        sold[e.num] = { name: e.name, phone: e.phone, ts: e.ts };
+        sold[e.num] = { name: e.name, phone: e.phone, ts: e.ts, paid: false };
       }
     } else if (e.action === 'edit') {
       if (sold[e.num] && e.name) {
-        sold[e.num] = { name: e.name, phone: e.phone, ts: sold[e.num].ts };
+        sold[e.num] = { name: e.name, phone: e.phone, ts: sold[e.num].ts, paid: !!sold[e.num].paid };
       }
+    } else if (e.action === 'paid') {
+      if (sold[e.num]) sold[e.num].paid = e.paid;
     } else if (sold[e.num]) {
       delete sold[e.num];
     }
@@ -130,9 +142,9 @@ async function readBoard() {
   return replay(events);
 }
 
-async function writeEvent(action, num, name, phone) {
+async function writeEvent(action, num, name, phone, paid) {
   const ts = Date.now();
-  const pathname = eventName(action, num, name, phone, ts);
+  const pathname = eventName(action, num, name, phone, ts, paid);
 
   await put(pathname, '{}', {
     access: 'public',
@@ -141,14 +153,35 @@ async function writeEvent(action, num, name, phone) {
     contentType: 'application/json'
   });
 
-  return { action, num, name, phone, ts, sort: pathname };
+  return { action, num, name, phone, paid: !!paid, ts, sort: pathname };
+}
+
+// El estado de pago solo lo ve el administrador
+function isAdmin(pin) {
+  const expected = clean(process.env.ADMIN_PIN, 30);
+  if (!expected) return false;
+  const given = clean(pin, 30);
+  return given.length > 0 && given === expected;
+}
+
+function publicBoard(board, admin) {
+  if (admin) return board;
+
+  const sold = {};
+  Object.keys(board.sold || {}).forEach(function (num) {
+    const item = board.sold[num] || {};
+    sold[num] = { name: item.name, phone: item.phone, ts: item.ts };
+  });
+
+  return { sold, updatedAt: board.updatedAt };
 }
 
 module.exports = async (req, res) => {
   try {
     if (req.method === 'GET') {
       const board = await readBoard();
-      return send(res, 200, { ok: true, board });
+      const admin = isAdmin(req.query && req.query.pin);
+      return send(res, 200, { ok: true, admin, board: publicBoard(board, admin) });
     }
 
     if (req.method !== 'POST') {
@@ -168,8 +201,11 @@ module.exports = async (req, res) => {
     if (!/^\d{2}$/.test(num) || Number(num) >= TOTAL) {
       return send(res, 400, { ok: false, error: 'number' });
     }
-    if (!['claim', 'edit', 'release'].includes(action)) {
+    if (!['claim', 'edit', 'release', 'paid'].includes(action)) {
       return send(res, 400, { ok: false, error: 'action' });
+    }
+    if ((action === 'release' || action === 'paid') && !isAdmin(body.pin)) {
+      return send(res, 401, { ok: false, error: 'admin' });
     }
 
     const sold = (await readBoard()).sold;
@@ -181,32 +217,48 @@ module.exports = async (req, res) => {
       return send(res, 404, { ok: false, error: 'missing' });
     }
 
-    const name = action === 'release' ? '' : clean(body.name, NAME_MAX).replace(/\s+/g, ' ');
-    if (action !== 'release' && name.length < 2) {
+    const name = action === 'release' || action === 'paid'
+      ? ''
+      : clean(body.name, NAME_MAX).replace(/\s+/g, ' ');
+    if (action !== 'release' && action !== 'paid' && name.length < 2) {
       return send(res, 400, { ok: false, error: 'name' });
     }
 
-    const event = await writeEvent(action, num, name, action === 'release' ? '' : clean(body.phone, PHONE_MAX));
+    const paid = !!body.paid;
+    const event = await writeEvent(
+      action,
+      num,
+      name,
+      action === 'release' || action === 'paid' ? '' : clean(body.phone, PHONE_MAX),
+      paid
+    );
 
     // Si otra persona apartó el mismo número primero, manda el más antiguo
     if (action === 'claim') {
       const after = await readBoard();
       const owner = after.sold[num];
       if (owner && owner.ts !== event.ts) {
-        return send(res, 409, { ok: false, error: 'taken', board: after });
+        return send(res, 409, { ok: false, error: 'taken', board: publicBoard(after, false) });
       }
     }
 
     // Se responde con el estado ya aplicado
     if (event.action === 'claim') {
-      sold[num] = { name: event.name, phone: event.phone, ts: event.ts };
+      sold[num] = { name: event.name, phone: event.phone, ts: event.ts, paid: false };
     } else if (event.action === 'edit') {
-      sold[num] = { name: event.name, phone: event.phone, ts: sold[num].ts };
+      sold[num] = { name: event.name, phone: event.phone, ts: sold[num].ts, paid: !!sold[num].paid };
+    } else if (event.action === 'paid') {
+      if (sold[num]) sold[num].paid = event.paid;
     } else {
       delete sold[num];
     }
 
-    return send(res, 200, { ok: true, board: { sold, updatedAt: event.ts } });
+    const admin = isAdmin(body.pin);
+    return send(res, 200, { ok: true, admin, board: publicBoard({ sold, updatedAt: event.ts }, admin) });
+  } catch (err) {
+    return send(res, 500, { ok: false, error: 'server', message: String((err && err.message) || err) });
+  }
+};
   } catch (err) {
     return send(res, 500, { ok: false, error: 'server', message: String((err && err.message) || err) });
   }

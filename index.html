@@ -194,6 +194,17 @@
   .live.off{color:#9a8c72;background:#faf5ea;border-color:#ecdfc8}
   .live.off i{background:#c2ad86;box-shadow:none;animation:none}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  .head-tools{display:flex;align-items:center;gap:7px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
+  .admin-btn{
+    appearance:none;cursor:pointer;font-family:var(--sans);
+    font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+    color:#9a8c72;background:#fffdf8;border:1px solid var(--line);
+    border-radius:999px;padding:7px 11px;white-space:nowrap;
+    transition:background .2s ease, border-color .2s ease, color .2s ease;
+  }
+  .admin-btn:hover{background:#fbf5e9;border-color:#ddcfb4;color:#6f6046}
+  .admin-btn.on{color:#3f7358;background:#f1f9f3;border-color:#cfe6d7}
   .head-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 
   /* resumen */
@@ -203,6 +214,7 @@
     border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);
   }
   .summary > div{text-align:center;position:relative;padding:0 4px}
+  .summary:has(#moneyBox[hidden]){grid-template-columns:1fr 1fr}
   .summary > div + div::before{
     content:"";position:absolute;left:0;top:4px;bottom:4px;width:1px;background:var(--line-soft);
   }
@@ -341,6 +353,9 @@
     margin:8px 0 0;font-size:11.5px;line-height:1.5;color:#9a8c72;
   }
   .pay-note b{color:#3f7358;font-weight:700}
+
+  .paid-on{color:#2f7d55;font-weight:800}
+  .paid-off{color:#b08954;font-weight:800}
 
   /* ================= PIE ================= */
   footer{
@@ -486,7 +501,7 @@
   @media print{
     body{background:#fff}
     body::after{display:none}
-    .hero-actions,.search,.legend,.head-actions,.live,.progress,.progress-label,footer{display:none !important}
+    .hero-actions,.search,.legend,.head-actions,.live,.admin-btn,.progress,.progress-label,footer{display:none !important}
     .wrap{padding:0;max-width:none}
     .hero{background:#fff;color:#000;box-shadow:none;border:1px solid #ccc;border-radius:0;padding:16px}
     .hero::before{display:none}
@@ -542,13 +557,16 @@
         <h2>Elige tu número</h2>
         <p class="sub">Toca un número libre y escribe tu nombre.</p>
       </div>
-      <span class="live" id="live"><i></i><span id="liveText">Conectando…</span></span>
+      <div class="head-tools">
+        <span class="live" id="live"><i></i><span id="liveText">Conectando…</span></span>
+        <button class="admin-btn" id="btnAdmin" type="button">Admin</button>
+      </div>
     </div>
 
     <div class="summary">
       <div><span class="s-k">Vendidos</span><span class="s-v" id="stSold">0 / 100</span></div>
       <div><span class="s-k">Disponibles</span><span class="s-v" id="stFree">100</span></div>
-      <div class="s-money"><span class="s-k">Recaudado</span><span class="s-v" id="stMoney">$0</span></div>
+      <div class="s-money" id="moneyBox" hidden><span class="s-k">Recaudado</span><span class="s-v" id="stMoney">$0</span></div>
     </div>
 
     <div class="progress"><span id="bar"></span></div>
@@ -686,6 +704,57 @@
   var ONLINE = location.protocol === 'http:' || location.protocol === 'https:';
   var lastStamp = -1;
   var busy = false;
+  var admin = false;
+  var adminPin = '';
+
+  try {
+    var savedPin = sessionStorage.getItem(KEY + '_admin') || '';
+    if (savedPin) { adminPin = savedPin; admin = true; }
+  } catch (e) { /* sin sesión */ }
+
+  function setAdminUI() {
+    var btn = el('btnAdmin');
+    if (btn) {
+      btn.textContent = admin ? 'Admin activo' : 'Admin';
+      btn.classList.toggle('on', admin);
+    }
+    var money = el('moneyBox');
+    if (money) money.hidden = !admin;
+  }
+
+  async function toggleAdmin() {
+    if (admin) {
+      if (!confirm('¿Salir del modo administrador?')) return;
+      admin = false;
+      adminPin = '';
+      try { sessionStorage.removeItem(KEY + '_admin'); } catch (e) { /* nada */ }
+      lastStamp = -1;
+      setAdminUI();
+      await pull();
+      toast('Modo administrador desactivado');
+      return;
+    }
+
+    var pin = prompt('Clave de administrador');
+    if (!pin) return;
+
+    try {
+      var r = await fetch('/api/board?pin=' + encodeURIComponent(pin), { cache: 'no-store' });
+      var data = await r.json();
+      if (!data || data.admin !== true) { toast('Clave incorrecta'); return; }
+
+      admin = true;
+      adminPin = pin;
+      try { sessionStorage.setItem(KEY + '_admin', pin); } catch (e) { /* nada */ }
+
+      lastStamp = -1;
+      setAdminUI();
+      applyBoard(data.board);
+      toast('Modo administrador activado');
+    } catch (e) {
+      toast('Sin conexión. Intenta de nuevo.');
+    }
+  }
 
   function setLive(mode) {
     var chip = el('live'), text = el('liveText');
@@ -711,9 +780,18 @@
   async function pull() {
     if (!ONLINE) return null;
     try {
-      var r = await fetch('/api/board', { cache: 'no-store' });
+      var url = '/api/board' + (adminPin ? '?pin=' + encodeURIComponent(adminPin) : '');
+      var r = await fetch(url, { cache: 'no-store' });
       if (!r.ok) throw new Error('http');
       var data = await r.json();
+
+      if (admin && data.admin !== true) {
+        admin = false;
+        adminPin = '';
+        try { sessionStorage.removeItem(KEY + '_admin'); } catch (e) { /* nada */ }
+        setAdminUI();
+      }
+
       setLive('on');
       applyBoard(data.board);
       return data.board;
@@ -723,11 +801,14 @@
     }
   }
 
-  async function pushAction(action, num, name, phone) {
+  async function pushAction(action, num, name, phone, paid) {
     var r = await fetch('/api/board', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: action, num: num, name: name || '', phone: phone || '' })
+      body: JSON.stringify({
+        action: action, num: num, name: name || '', phone: phone || '',
+        paid: !!paid, pin: adminPin || ''
+      })
     });
     var data = {};
     try { data = await r.json(); } catch (e) { /* sin cuerpo */ }
@@ -948,24 +1029,53 @@
         new Date(o.ts || Date.now()).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) +
       '</span></div>' +
       '<div class="detail-row"><span class="k">Sorteo</span><span class="v">' + esc(CFG.dateLong) + '</span></div>' +
+      (admin
+        ? '<div class="detail-row"><span class="k">Pago</span><span class="v ' + (o.paid ? 'paid-on' : 'paid-off') + '">' +
+            (o.paid ? 'Pagado' : 'Sin pagar') + '</span></div>'
+        : '') +
       '<div class="m-actions" style="margin-top:18px">' +
         '<button class="btn soft" data-close>Cerrar</button>' +
         '<button class="btn dark" id="dEdit">Editar</button>' +
       '</div>' +
-      '<div style="margin-top:10px">' +
-        '<button class="btn danger block" id="dFree">Liberar número</button>' +
-      '</div>'
+      (admin
+        ? '<div style="margin-top:10px">' +
+            '<button class="btn ' + (o.paid ? 'soft' : 'dark') + ' block" id="dPaid">' +
+              (o.paid ? 'Marcar como no pagado' : 'Marcar como pagado') +
+            '</button>' +
+          '</div>' +
+          '<div style="margin-top:10px">' +
+            '<button class="btn danger block" id="dFree">Liberar número</button>' +
+          '</div>'
+        : '')
     );
 
     el('dEdit').addEventListener('click', function () { openClaim(num, true); });
 
-    el('dFree').addEventListener('click', async function () {
+    if (admin) el('dPaid').addEventListener('click', async function () {
+      var res = null;
+      try { res = await pushAction('paid', num, '', '', !o.paid); } catch (err) { res = null; }
+
+      if (!res) { toast('Sin conexión. Intenta de nuevo.'); return; }
+      if (res.status === 401) { toast('Sesión de administrador vencida'); return; }
+      if (!res.ok || !res.data.board) { toast('No se pudo guardar. Intenta otra vez.'); return; }
+
+      lastStamp = Number(res.data.board.updatedAt) || 0;
+      state.sold = res.data.board.sold;
+      normalizeSold();
+      save();
+      renderAll();
+      openDetail(num);
+      toast(o.paid ? 'Marcado como no pagado' : 'Marcado como pagado');
+    });
+
+    if (admin) el('dFree').addEventListener('click', async function () {
       if (!confirm('¿Liberar el número ' + num + '? Se borrará el nombre de ' + o.name + '.')) return;
 
       if (ONLINE) {
         var res = null;
         try { res = await pushAction('release', num); } catch (err) { res = null; }
         if (!res) { toast('Sin conexión. Intenta de nuevo.'); return; }
+        if (res.status === 401) { toast('Sesión de administrador vencida'); return; }
         if (!res.ok && res.status !== 404) { toast('No se pudo liberar. Intenta otra vez.'); return; }
         if (res.data && res.data.board) {
           lastStamp = Number(res.data.board.updatedAt) || 0;
@@ -994,9 +1104,15 @@
     if (!nums.length) {
       rows = '<div class="empty">Aún no hay números apartados.<br>Elige el tuyo en el tablero.</div>';
     } else {
-      rows = '<div class="list"><table><thead><tr><th>Número</th><th>Nombre</th></tr></thead><tbody>';
+      rows = '<div class="list"><table><thead><tr><th>Número</th><th>Nombre</th>' +
+        (admin ? '<th>Pago</th>' : '') + '</tr></thead><tbody>';
       nums.forEach(function (n) {
-        rows += '<tr><td class="n">' + esc(n) + '</td><td>' + esc(state.sold[n].name) + '</td></tr>';
+        var o = state.sold[n];
+        rows += '<tr><td class="n">' + esc(n) + '</td><td>' + esc(o.name) + '</td>' +
+          (admin
+            ? '<td class="' + (o.paid ? 'paid-on' : 'paid-off') + '">' + (o.paid ? 'Pagado' : 'Sin pagar') + '</td>'
+            : '') +
+          '</tr>';
       });
       rows += '</tbody></table></div>';
     }
@@ -1055,6 +1171,7 @@
 
   el('btnShare').addEventListener('click', shareBoard);
   el('btnList').addEventListener('click', openList);
+  el('btnAdmin').addEventListener('click', toggleAdmin);
   el('btnPrint').addEventListener('click', function () { window.print(); });
 
   el('btnGo').addEventListener('click', function () {
@@ -1069,6 +1186,7 @@
 
   if (ONLINE) {
     setLive('wait');
+    setAdminUI();
     pull();
     setInterval(function () {
       if (!document.hidden && !busy) pull();
@@ -1079,6 +1197,7 @@
     });
   } else {
     setLive('offline');
+    setAdminUI();
   }
 
   window.addEventListener('storage', function (e) {
