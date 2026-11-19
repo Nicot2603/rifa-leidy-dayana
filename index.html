@@ -154,8 +154,6 @@
   .btn.soft:hover{background:#fdf8ee;border-color:#ddcfb4}
   .btn.danger{background:transparent;color:#a4402f;border:1px solid #eccdc5}
   .btn.danger:hover{background:#fdf1ee}
-  .btn.wa{background:#1d7a4c;color:#f7fbf7;box-shadow:0 14px 26px -16px rgba(29,122,76,.9)}
-  .btn.wa:hover{background:#176340}
   .btn.sm{padding:10px 16px;font-size:11px;letter-spacing:.06em}
   .btn.block{width:100%}
   .btn.link{
@@ -316,6 +314,33 @@
   .legend .l-sold{background:linear-gradient(160deg,#11463f,#082420);border:1px solid #0d3a34}
   .legend .legend-links{margin-left:auto;display:inline-flex;align-items:center;gap:16px}
   @media (max-width:430px){ .legend .legend-links{width:100%;justify-content:flex-end;margin-top:2px} }
+
+  /* ================= PAGO ================= */
+  .pay{
+    margin-top:22px;border:1px solid var(--line);border-radius:18px;
+    background:linear-gradient(180deg,#fffdf8,#fbf5e9);padding:16px 18px;
+  }
+  .pay-head{
+    display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    padding-bottom:11px;border-bottom:1px dashed #e6dac3;
+  }
+  .pay-head span{
+    font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#a1927a;
+  }
+  .pay-head b{
+    font-family:var(--serif);font-size:20px;font-weight:600;color:var(--ink);
+  }
+  .pay-row{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:10px 0;font-size:13px;color:var(--ink-2);
+  }
+  .pay-row + .pay-row{border-top:1px solid rgba(226,213,187,.5)}
+  .pay-row span{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#a1927a}
+  .pay-row b{font-weight:700;letter-spacing:.02em}
+  .pay-note{
+    margin:8px 0 0;font-size:11.5px;line-height:1.5;color:#9a8c72;
+  }
+  .pay-note b{color:#3f7358;font-weight:700}
 
   /* ================= PIE ================= */
   footer{
@@ -544,6 +569,16 @@
         <button class="btn link" id="btnPrint">Imprimir</button>
       </span>
     </div>
+
+    <div class="pay">
+      <div class="pay-head">
+        <span>Pagar la boleta</span>
+        <b id="payAmount">$10.000</b>
+      </div>
+      <div class="pay-row"><span>Nequi</span><b>311 275 6483</b></div>
+      <div class="pay-row"><span>Llave</span><b>@3112756483</b></div>
+      <p class="pay-note">Envía el pago y <b>confirma tu número</b> con Leidy.</p>
+    </div>
   </section>
 
   <footer class="rise d2">
@@ -572,8 +607,7 @@
     total: 100,
     dateLong: 'Sábado 21 de noviembre de 2026',
     dateShort: 'Sáb 21 de noviembre',
-    draw: 'Últimas 2 cifras · Lotería de Boyacá · 10:30 p.m.',
-    whatsapp: '573112756483'
+    draw: 'Últimas 2 cifras · Lotería de Boyacá · 10:30 p.m.'
   };
 
   var state = { sold: {} };
@@ -593,13 +627,6 @@
 
   function digitsCount() { return String(Math.max(1, CFG.total - 1)).length; }
   function pad(n) { var s = String(n); while (s.length < digitsCount()) { s = '0' + s; } return s; }
-
-  // Mensaje que le llega a Leidy cuando alguien aparta su número
-  function waLink(num) {
-    if (!CFG.whatsapp) return '';
-    var msg = 'Hola, aparto el número ' + num;
-    return 'https://wa.me/' + CFG.whatsapp + '?text=' + encodeURIComponent(msg);
-  }
 
   function normalizeSold() {
     var fixed = {};
@@ -825,19 +852,6 @@
       if (name.length < 2) { toast('Escribe tu nombre'); nameInput.focus(); return; }
       if (busy) return;
 
-      // Se abre WhatsApp dentro del mismo clic (los navegadores solo permiten
-      // abrir ventanas así). Si el número no queda apartado, se cierra sola.
-      var waWin = null;
-      if (ONLINE && !isEdit && CFG.whatsapp) {
-        try { waWin = window.open(waLink(num), '_blank'); }
-        catch (err) { waWin = null; }
-      }
-      function closeWa() {
-        if (waWin && !waWin.closed) {
-          try { waWin.close(); } catch (err) { /* sin permiso */ }
-        }
-      }
-
       var submit = el('claimForm').querySelector('button[type="submit"]');
       var label = submit.textContent;
       busy = true;
@@ -853,16 +867,15 @@
         submit.disabled = false;
         submit.textContent = label;
 
-        if (!res) { closeWa(); toast('Sin conexión. Intenta de nuevo.'); return; }
+        if (!res) { toast('Sin conexión. Intenta de nuevo.'); return; }
 
         if (res.status === 409) {
-          closeWa();
           applyBoard(res.data.board);
           closeModal();
           toast('Ese número acaba de ser apartado');
           return;
         }
-        if (!res.ok || !res.data.board) { closeWa(); toast('No se pudo guardar. Intenta otra vez.'); return; }
+        if (!res.ok || !res.data.board) { toast('No se pudo guardar. Intenta otra vez.'); return; }
 
         lastStamp = Number(res.data.board.updatedAt) || 0;
         state.sold = res.data.board.sold;
@@ -906,15 +919,14 @@
         '<div class="t-line"><span>Premio</span><b>' + money(CFG.prize) + '</b></div>' +
         '<div class="t-line"><span>Sorteo</span><b>' + esc(CFG.dateShort) + '</b></div>' +
       '</div>' +
-      '<div class="m-actions" style="margin-top:18px">' +
-        (CFG.whatsapp
-          ? '<a class="btn wa block" href="' + waLink(num) + '" target="_blank" rel="noopener">Enviar por WhatsApp</a>'
-          : '') +
+      '<div class="pay" style="margin-top:16px;padding:13px 15px">' +
+        '<div class="pay-row" style="padding-top:0"><span>Nequi</span><b>311 275 6483</b></div>' +
+        '<div class="pay-row"><span>Llave</span><b>@3112756483</b></div>' +
       '</div>' +
-      '<div class="m-actions" style="margin-top:10px">' +
+      '<div class="m-actions" style="margin-top:14px">' +
         '<button class="btn soft block" data-close>Listo</button>' +
       '</div>' +
-      '<p class="m-note">Guarda este comprobante y envía el mensaje a ' + esc(CFG.beneficiary) + ' para confirmar tu número.</p>'
+      '<p class="m-note">Paga la boleta y confirma tu número con ' + esc(CFG.beneficiary) + '.</p>'
     );
   }
 

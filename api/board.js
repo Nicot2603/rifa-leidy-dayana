@@ -2,13 +2,19 @@
 
 const { put, list } = require('@vercel/blob');
 
-// El tablero se guarda como "snapshots" inmutables: cada cambio escribe un
-// archivo nuevo con nombre único. Así nunca se lee una versión vieja desde el
-// CDN (Vercel Blob cachea las URLs públicas durante 60 s y al sobrescribir un
-// archivo se seguía viendo el contenido anterior).
-const PREFIX = 'snap/';
-const LEGACY = 'board.json';
-const MAX_SNAPSHOTS = 1000;
+/*
+  El tablero se guarda como una lista de "eventos" (apartar, editar, liberar),
+  cada uno en su propio archivo con nombre único. Nunca se sobrescribe nada.
+
+  Antes cada cambio reescribía un único archivo con el tablero completo; si dos
+  personas lo usaban a la vez, una lectura un poco vieja hacía que un apartado
+  borrara a los demás. Con eventos eso no puede pasar: el estado se arma
+  leyendo todos los eventos en orden.
+*/
+
+const EVENTS = 'ev/';
+const LEGACY = 'snap/';
+const MAX = 1000;
 const TOTAL = 100;
 const NAME_MAX = 40;
 const PHONE_MAX = 20;
@@ -27,85 +33,115 @@ function clean(value, max) {
     .slice(0, max);
 }
 
-function normalize(data) {
-  return {
-    sold: data && typeof data.sold === 'object' && data.sold ? data.sold : {},
-    updatedAt: Number(data && data.updatedAt) || 0
-  };
+function b64(value) {
+  return Buffer.from(String(value), 'utf8').toString('base64url');
 }
 
-function snapshotTime(blob) {
-  const name = blob.pathname.slice(PREFIX.length);
-  return Number(name.split('-')[0]) || 0;
+function unb64(value) {
+  try { return Buffer.from(value, 'base64url').toString('utf8'); }
+  catch (e) { return ''; }
 }
 
-// Devuelve los snapshots del más nuevo al más viejo
-async function snapshots(attempt) {
+// ev/1795047972570.c.27.eyJuIjoiSmFpbWUiLCJwIjoiIn0.json
+function eventName(action, num, name, phone, ts) {
+  const payload = b64(JSON.stringify({ n: action === 'release' ? '' : name, p: action === 'release' ? '' : phone }));
+  return EVENTS + ts + '.' + action.charAt(0) + '.' + num + '.' + payload + '.json';
+}
+
+function parseEvent(pathname) {
+  const parts = pathname.slice(EVENTS.length).split('.');
+  const ts = Number(parts[0]) || 0;
+  const action = parts[1] === 'c' ? 'claim' : parts[1] === 'e' ? 'edit' : 'release';
+  const num = parts[2] || '';
+  let name = '';
+  let phone = '';
+  if (action !== 'release') {
+    try {
+      const data = JSON.parse(unb64(parts[3] || ''));
+      name = String(data.n || '');
+      phone = String(data.p || '');
+    } catch (e) { /* evento ilegible */ }
+  }
+  return { ts, action, num, name, phone, sort: pathname };
+}
+
+async function eventList(attempt) {
   attempt = attempt || 1;
-  const { blobs } = await list({ prefix: PREFIX, limit: MAX_SNAPSHOTS });
+  const { blobs } = await list({ prefix: EVENTS, limit: MAX });
   const found = blobs
-    .map(function (b) { return { url: b.url, at: snapshotTime(b) }; })
-    .sort(function (a, b) { return b.at - a.at; });
+    .filter(function (b) { return b.pathname.indexOf(EVENTS) === 0; })
+    .map(function (b) { return parseEvent(b.pathname); })
+    .filter(function (e) { return /^\d{2}$/.test(e.num) && e.ts > 0; })
+    .sort(function (a, b) { return a.ts - b.ts || (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0); });
 
-  // Si el índice aún no muestra nada, se reintenta antes de dar el tablero por vacío
   if (!found.length && attempt < 3) {
     await new Promise(function (done) { setTimeout(done, 250); });
-    return snapshots(attempt + 1);
+    return eventList(attempt + 1);
   }
-
   return found;
 }
 
-async function readUrl(url) {
-  const response = await fetch(url, { cache: 'no-store' });
-  if (!response.ok) return null;
-  return normalize(await response.json());
+function replay(events) {
+  const sold = {};
+
+  events.forEach(function (e) {
+    if (e.action === 'claim') {
+      // El primero que apartó el número es el que queda
+      if (!sold[e.num] && e.name) {
+        sold[e.num] = { name: e.name, phone: e.phone, ts: e.ts };
+      }
+    } else if (e.action === 'edit') {
+      if (sold[e.num] && e.name) {
+        sold[e.num] = { name: e.name, phone: e.phone, ts: sold[e.num].ts };
+      }
+    } else if (sold[e.num]) {
+      delete sold[e.num];
+    }
+  });
+
+  return { sold, updatedAt: events.length ? events[events.length - 1].ts : 0 };
 }
 
-async function readBoard() {
-  const found = await snapshots();
-
-  for (const snap of found.slice(0, 3)) {
-    const board = await readUrl(snap.url);
-    if (board) return board;
-  }
-
-  return readLegacy();
-}
-
-// Compatibilidad con el primer formato (un solo archivo sobrescrito)
+// Solo por si el tablero aún no tiene eventos (versión anterior)
 async function readLegacy() {
   try {
-    const { blobs } = await list({ prefix: LEGACY, limit: 10 });
-    const found = blobs.find(function (b) { return b.pathname === LEGACY; });
-    if (!found) return { sold: {}, updatedAt: 0 };
-    const board = await readUrl(found.url);
-    return board || { sold: {}, updatedAt: 0 };
+    const { blobs } = await list({ prefix: LEGACY, limit: MAX });
+    if (!blobs.length) return { sold: {}, updatedAt: 0 };
+
+    const newest = blobs.sort(function (a, b) {
+      return Number(b.pathname.slice(LEGACY.length).split('-')[0]) - Number(a.pathname.slice(LEGACY.length).split('-')[0]);
+    })[0];
+
+    const response = await fetch(newest.url, { cache: 'no-store' });
+    if (!response.ok) return { sold: {}, updatedAt: 0 };
+    const data = await response.json();
+    return {
+      sold: data && data.sold && typeof data.sold === 'object' ? data.sold : {},
+      updatedAt: Number(data && data.updatedAt) || 0
+    };
   } catch (e) {
     return { sold: {}, updatedAt: 0 };
   }
 }
 
-async function writeBoard(sold) {
-  const board = { sold, updatedAt: Date.now() };
-  const name = PREFIX + board.updatedAt + '-' + Math.random().toString(36).slice(2, 8) + '.json';
+async function readBoard() {
+  const events = await eventList();
+  if (!events.length) return readLegacy();
+  return replay(events);
+}
 
-  await put(name, JSON.stringify(board), {
+async function writeEvent(action, num, name, phone) {
+  const ts = Date.now();
+  const pathname = eventName(action, num, name, phone, ts);
+
+  await put(pathname, '{}', {
     access: 'public',
     addRandomSuffix: false,
     allowOverwrite: false,
     contentType: 'application/json'
   });
 
-  return board;
-}
-
-// Serializa las escrituras dentro de la misma instancia
-let chain = Promise.resolve();
-function lock(task) {
-  const next = chain.then(task, task);
-  chain = next.then(function () {}, function () {});
-  return next;
+  return { action, num, name, phone, ts, sort: pathname };
 }
 
 module.exports = async (req, res) => {
@@ -136,29 +172,41 @@ module.exports = async (req, res) => {
       return send(res, 400, { ok: false, error: 'action' });
     }
 
-    return await lock(async () => {
-      const sold = (await readBoard()).sold;
+    const sold = (await readBoard()).sold;
 
-      if (action === 'claim') {
-        if (sold[num]) {
-          return send(res, 409, { ok: false, error: 'taken', board: { sold, updatedAt: Date.now() } });
-        }
-        const name = clean(body.name, NAME_MAX).replace(/\s+/g, ' ');
-        if (name.length < 2) return send(res, 400, { ok: false, error: 'name' });
-        sold[num] = { name, phone: clean(body.phone, PHONE_MAX), ts: Date.now() };
-      } else if (action === 'edit') {
-        if (!sold[num]) return send(res, 404, { ok: false, error: 'missing' });
-        const name = clean(body.name, NAME_MAX).replace(/\s+/g, ' ');
-        if (name.length < 2) return send(res, 400, { ok: false, error: 'name' });
-        sold[num] = { name, phone: clean(body.phone, PHONE_MAX), ts: sold[num].ts || Date.now() };
-      } else {
-        if (!sold[num]) return send(res, 404, { ok: false, error: 'missing' });
-        delete sold[num];
+    if (action === 'claim' && sold[num]) {
+      return send(res, 409, { ok: false, error: 'taken', board: { sold, updatedAt: Date.now() } });
+    }
+    if (action !== 'claim' && !sold[num]) {
+      return send(res, 404, { ok: false, error: 'missing' });
+    }
+
+    const name = action === 'release' ? '' : clean(body.name, NAME_MAX).replace(/\s+/g, ' ');
+    if (action !== 'release' && name.length < 2) {
+      return send(res, 400, { ok: false, error: 'name' });
+    }
+
+    const event = await writeEvent(action, num, name, action === 'release' ? '' : clean(body.phone, PHONE_MAX));
+
+    // Si otra persona apartó el mismo número primero, manda el más antiguo
+    if (action === 'claim') {
+      const after = await readBoard();
+      const owner = after.sold[num];
+      if (owner && owner.ts !== event.ts) {
+        return send(res, 409, { ok: false, error: 'taken', board: after });
       }
+    }
 
-      const board = await writeBoard(sold);
-      return send(res, 200, { ok: true, board });
-    });
+    // Se responde con el estado ya aplicado
+    if (event.action === 'claim') {
+      sold[num] = { name: event.name, phone: event.phone, ts: event.ts };
+    } else if (event.action === 'edit') {
+      sold[num] = { name: event.name, phone: event.phone, ts: sold[num].ts };
+    } else {
+      delete sold[num];
+    }
+
+    return send(res, 200, { ok: true, board: { sold, updatedAt: event.ts } });
   } catch (err) {
     return send(res, 500, { ok: false, error: 'server', message: String((err && err.message) || err) });
   }
