@@ -1,10 +1,19 @@
 'use strict';
 
-const { put, list } = require('@vercel/blob');
+const { Redis } = require('@upstash/redis');
+const { list } = require('@vercel/blob');
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL || '',
+  token: process.env.UPSTASH_REDIS_REST_TOKEN || ''
+});
+
+// Clave principal del tablero (eventos serializados)
+const EVENTS_KEY = 'rifa:board:events';
 
 /*
   El tablero se guarda como una lista de "eventos" (apartar, editar, liberar),
-  cada uno en su propio archivo con nombre único. Nunca se sobrescribe nada.
+  serializados como un arreglo JSON en una sola clave de Redis (Upstash).
 
   Antes cada cambio reescribía un único archivo con el tablero completo; si dos
   personas lo usaban a la vez, una lectura un poco vieja hacía que un apartado
@@ -75,12 +84,38 @@ function parseEvent(pathname) {
   return { ts, action, num, name, phone, paid, sort: pathname };
 }
 
+async function readEvents() {
+  const raw = await redis.get(EVENTS_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (e) { /* se rehidrata desde el store anterior */ }
+  }
+
+  // Si aún no existe en la nueva tienda, hidrata desde el store anterior
+  // (ese se sigue leyendo aunque esté suspendido; solo se escriben eventos nuevos).
+  const seeded = await seedFromBlobs().catch(function (e) { return []; });
+  if (seeded.length) {
+    try { await redis.set(EVENTS_KEY, JSON.stringify(seeded)); } catch (e) { /* se reintenta al leer */ }
+  }
+  return seeded;
+}
+
+async function seedFromBlobs() {
+  const { blobs } = await list({ prefix: EVENTS, limit: MAX });
+  const found = (blobs || [])
+    .filter(function (b) { return String(b.pathname || '').indexOf(EVENTS) === 0; })
+    .map(function (b) { return parseEvent(b.pathname); })
+    .filter(function (e) { return /^\d{2}$/.test(e.num) && e.ts > 0; })
+    .sort(function (a, b) { return a.ts - b.ts || (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0); });
+  return found;
+}
+
 async function eventList(attempt) {
   attempt = attempt || 1;
-  const { blobs } = await list({ prefix: EVENTS, limit: MAX });
-  const found = blobs
-    .filter(function (b) { return b.pathname.indexOf(EVENTS) === 0; })
-    .map(function (b) { return parseEvent(b.pathname); })
+  const events = await readEvents();
+  const found = events
     .filter(function (e) { return /^\d{2}$/.test(e.num) && e.ts > 0; })
     .sort(function (a, b) { return a.ts - b.ts || (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0); });
 
@@ -138,22 +173,29 @@ async function readLegacy() {
 
 async function readBoard() {
   const events = await eventList();
-  if (!events.length) return readLegacy();
+  if (!events.length) return { sold: {}, updatedAt: 0 };
   return replay(events);
 }
 
 async function writeEvent(action, num, name, phone, paid) {
   const ts = Date.now();
-  const pathname = eventName(action, num, name, phone, ts, paid);
+  const cleanNum = String(num == null ? '' : num).trim().padStart(2, '0');
+  const cleanAction = action === 'claim' ? 'c' : action === 'edit' ? 'e' : action === 'paid' ? 'p' : 'r';
+  const sort = EVENTS + ts + '.' + cleanAction + '.' + cleanNum;
 
-  await put(pathname, '{}', {
-    access: 'public',
-    addRandomSuffix: false,
-    allowOverwrite: false,
-    contentType: 'application/json'
+  const events = await readEvents();
+  events.push({
+    ts: ts,
+    action: action,
+    num: cleanNum,
+    name: String(name == null ? '' : name),
+    phone: String(phone == null ? '' : phone),
+    paid: !!paid,
+    sort: sort
   });
+  await redis.set(EVENTS_KEY, JSON.stringify(events));
 
-  return { action, num, name, phone, paid: !!paid, ts, sort: pathname };
+  return { action: action, num: cleanNum, name: String(name == null ? '' : name), phone: String(phone == null ? '' : phone), paid: !!paid, ts: ts, sort: sort };
 }
 
 // El estado de pago solo lo ve el administrador

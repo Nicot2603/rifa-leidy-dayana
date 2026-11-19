@@ -5,6 +5,7 @@
   "description": "Tablero compartido para la Gran Rifa Solidaria de Leidy Dayana.",
   "type": "commonjs",
   "dependencies": {
+    "@upstash/redis": "^1.41.0",
     "@vercel/blob": "^2.9.0"
   }
 }
