@@ -1,19 +1,20 @@
 'use strict';
 
-const { Redis } = require('@upstash/redis');
+const { createClient } = require('@supabase/supabase-js');
 const { list } = require('@vercel/blob');
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL || '',
-  token: process.env.UPSTASH_REDIS_REST_TOKEN || ''
-});
+const supabase = createClient(
+  process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.SUPABASE_SERVICE_KEY || 'placeholder',
+  { auth: { persistSession: false, autoRefreshToken: false } }
+);
 
-// Clave principal del tablero (eventos serializados)
-const EVENTS_KEY = 'rifa:board:events';
+// Tabla donde se guarda la secuencia de eventos del tablero
+const EVENTS_TABLE = 'rifa_events';
 
 /*
   El tablero se guarda como una lista de "eventos" (apartar, editar, liberar),
-  serializados como un arreglo JSON en una sola clave de Redis (Upstash).
+  serializados en la tabla `rifa_events` de Supabase (PostgreSQL).
 
   Antes cada cambio reescribía un único archivo con el tablero completo; si dos
   personas lo usaban a la vez, una lectura un poco vieja hacía que un apartado
@@ -85,21 +86,27 @@ function parseEvent(pathname) {
 }
 
 async function readEvents() {
-  const raw = await redis.get(EVENTS_KEY);
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    } catch (e) { /* se rehidrata desde el store anterior */ }
+  const { data, error } = await supabase.from(EVENTS_TABLE).select('*').order('ts', { ascending: true });
+  if (!error && data && data.length) {
+    return data.map(function (r) {
+      return { ts: r.ts, action: r.action, num: r.num, name: r.name, phone: r.phone, paid: !!r.paid, sort: r.sort };
+    });
   }
 
-  // Si aún no existe en la nueva tienda, hidrata desde el store anterior
-  // (ese se sigue leyendo aunque esté suspendido; solo se escriben eventos nuevos).
+  // Si la tabla está vacía, hidrata desde el store anterior (Vercel Blob)
   const seeded = await seedFromBlobs().catch(function (e) { return []; });
   if (seeded.length) {
-    try { await redis.set(EVENTS_KEY, JSON.stringify(seeded)); } catch (e) { /* se reintenta al leer */ }
+    await seedToSupabase(seeded);
   }
   return seeded;
+}
+
+async function seedToSupabase(events) {
+  const rows = events.map(function (e) {
+    return { ts: e.ts, action: e.action, num: e.num, name: e.name, phone: e.phone, paid: !!e.paid, sort: e.sort };
+  });
+  const { error } = await supabase.from(EVENTS_TABLE).insert(rows);
+  if (error) throw error;
 }
 
 async function seedFromBlobs() {
@@ -183,8 +190,7 @@ async function writeEvent(action, num, name, phone, paid) {
   const cleanAction = action === 'claim' ? 'c' : action === 'edit' ? 'e' : action === 'paid' ? 'p' : 'r';
   const sort = EVENTS + ts + '.' + cleanAction + '.' + cleanNum;
 
-  const events = await readEvents();
-  events.push({
+  const { error } = await supabase.from(EVENTS_TABLE).insert({
     ts: ts,
     action: action,
     num: cleanNum,
@@ -193,7 +199,7 @@ async function writeEvent(action, num, name, phone, paid) {
     paid: !!paid,
     sort: sort
   });
-  await redis.set(EVENTS_KEY, JSON.stringify(events));
+  if (error) throw error;
 
   return { action: action, num: cleanNum, name: String(name == null ? '' : name), phone: String(phone == null ? '' : phone), paid: !!paid, ts: ts, sort: sort };
 }
