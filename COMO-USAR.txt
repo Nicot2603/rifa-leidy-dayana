@@ -15,9 +15,9 @@ Afiche para estados: **afiche-rifa.png** (1080×1920)
 4. Al guardar, el número se **tapa con el nombre** en el tablero de todos.
 5. Abajo del tablero (y en el comprobante) están los datos para pagar la boleta:
    **Nequi 311 275 6483** o **llave @3112756483**.
-6. El comprobante muestra el número, el valor de la boleta y la fecha, y tiene el botón
-   **Enviar por WhatsApp** por si la ventana no se abrió sola.
-7. Tocar un número ya tapado muestra quién lo tiene, permite **editarlo** o **liberarlo**.
+6. El comprobante muestra el número, el valor de la boleta y la fecha.
+7. Tocar un número ya tapado muestra quién lo tiene. Nadie puede editar ni liberar desde
+   el tablero público: eso se hace únicamente desde el panel privado de Leidy.
 
 Botones disponibles:
 
@@ -29,28 +29,37 @@ Botones disponibles:
 | Participantes | Lista de números apartados con su nombre |
 | Imprimir | Imprime el tablero para llevarlo en papel |
 
-El tablero muestra **vendidos**, **disponibles** y **recaudado**, con barra de progreso.
+El tablero muestra **vendidos** y **disponibles**, con barra de progreso. Lo **recaudado**
+solo lo ve Leidy en su panel.
 
 ---
 
-## Modo administrador (solo Leidy)
+## Panel privado de Leidy (enlace aparte, sin clave)
 
-Arriba del tablero hay un botón **Admin**. Al tocarlo pide la clave:
+Link del panel:
 
-**Clave: `leidy2611`**
+**https://rifa-leidy-dayana.vercel.app/panel-leidy-x7k29q.html**
 
-Con el modo admin activo:
+- No pide clave: se abre directo (guardarlo en favoritos o en la pantalla de inicio).
+- Ahí sí se ve el **Recaudado** y el número de **Pagados**.
+- Cada número tiene **Marcar pagado / Quitar pago** y **Liberar**.
+- Tiene buscador por número o nombre, y se actualiza solo cada 10 segundos.
+- Los cambios se ven al instante en el tablero público.
 
-- Se ve el **Recaudado** (los demás solo ven vendidos y disponibles).
-- Cada número muestra **Pagado / Sin pagar**, y se puede marcar o desmarcar.
-- Aparece **Liberar número** (solo el admin puede liberar).
-- Los participantes muestran una columna **Pago**.
+Este enlace **no debe compartirse**: quien lo tenga puede liberar números y marcar pagos.
+El tablero público no tiene ningún botón ni enlace hacia el panel.
 
-Para salir, toca **Admin activo** y confirma. La clave se recuerda solo mientras la
-pestaña esté abierta.
+Seguridad: aunque no pida clave, la función `api/board.js` rechaza liberar, marcar pagos o
+editar nombres si la petición no trae la llave interna del panel. Esa llave está escrita
+dentro de `panel-leidy-x7k29q.html` (buscar `var TOKEN`).
 
-Para cambiar la clave: `vercel env add ADMIN_PIN --value "nuevaClave" --environment production --force`
-y volver a publicar.
+Si el enlace se filtra, se puede cambiar todo así:
+
+1. Generar un nombre nuevo, por ejemplo `panel-leidy-8m2p4z.html` (copiar el archivo y
+   renombrarlo) y borrar el anterior.
+2. `vercel env add ADMIN_PIN --value "claveNueva" --environment production --force`
+3. Cambiar `var TOKEN = 'claveNueva';` dentro del archivo nuevo.
+4. `git push` y listo: el enlace viejo deja de existir.
 
 ---
 
@@ -88,8 +97,9 @@ números tapados y los nombres, y se actualiza solo cada pocos segundos.
   del tablero y en el comprobante de cada número.
 - ✅ No requiere cuentas ni bases de datos externas: usa el almacenamiento de Vercel
   (`Vercel Blob`) a través de la función `api/board.js`.
-- ⚠️ Cualquiera con el enlace puede liberar un número. Si quieres proteger eso con un
-  PIN o dejar la lista de celulares visible solo para Leidy, se puede agregar.
+- ✅ Nadie puede liberar números, marcar pagos ni cambiar nombres desde el tablero
+  público: el servidor rechaza esas acciones sin la llave del panel.
+- ✅ Lo **recaudado** y el estado de pago solo aparecen en el panel privado de Leidy.
 - ⚠️ Si dos personas intentan el mismo número al mismo tiempo, la segunda recibe el aviso
   "Ese número acaba de ser apartado".
 
@@ -97,7 +107,8 @@ números tapados y los nombres, y se actualiza solo cada pocos segundos.
 
 ## Cómo está hecho
 
-- `index.html` — la app (una sola página, sin frameworks).
+- `index.html` — la app pública (una sola página, sin frameworks).
+- `panel-leidy-x7k29q.html` — el panel privado de Leidy (enlace aparte).
 - `api/board.js` — función de Vercel que lee y guarda el tablero en Vercel Blob.
 - `package.json` — dependencia `@vercel/blob`.
 
