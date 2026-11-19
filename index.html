@@ -597,11 +597,11 @@
   // Mensaje que le llega a Leidy cuando alguien aparta su número
   function waLink(num, name, phone) {
     if (!CFG.whatsapp) return '';
-    var msg = 'Hola ' + CFG.beneficiary + ' 👋 Soy ' + name + '. ' +
-      'Acabo de apartar el número ' + num + ' de la ' + CFG.title +
-      ' (boleta ' + money(CFG.price) + ' · sorteo ' + CFG.dateShort + ').' +
-      (phone ? ' Mi celular es ' + phone + '.' : '') +
-      ' Te escribo para confirmar mi número y coordinar el pago.';
+    var msg = 'Hola ' + CFG.beneficiary + '. Soy ' + name + '. ' +
+      'Acabo de apartar el número ' + num + ' de la ' + CFG.title + '. ' +
+      'El valor de la boleta es de ' + Number(CFG.price) + ' pesos y el sorteo es el ' + CFG.dateLong + '. ' +
+      (phone ? 'Mi celular es ' + phone + '. ' : '') +
+      'Te escribo para confirmar mi número y coordinar el pago.';
     return 'https://wa.me/' + CFG.whatsapp + '?text=' + encodeURIComponent(msg);
   }
 
@@ -812,7 +812,7 @@
         '</label>' +
         '<div class="m-actions">' +
           '<button type="button" class="btn soft" data-close>Cancelar</button>' +
-          '<button type="submit" class="btn dark">' + (isEdit ? 'Guardar' : 'Apartar y avisar') + '</button>' +
+          '<button type="submit" class="btn dark">' + (isEdit ? 'Guardar' : 'Apartar número') + '</button>' +
         '</div>' +
       '</form>' +
       '<p class="m-note">Boleta ' + money(CFG.price) + ' · Sorteo ' + CFG.dateShort + '</p>'
